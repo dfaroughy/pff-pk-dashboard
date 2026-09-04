@@ -155,7 +155,7 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
     series={[...empiricalSeries, ...generatedQuantiles]}
     styles={[
       ...empiricalSeries.map((_, index) => ({ stroke: "var(--cyan)", width: index === 1 ? 1.5 : 0.75, markers: true, radius: 2.1, dash: index === 1 ? undefined : "7 5" })),
-      ...generatedQuantiles.map(() => ({ stroke: "var(--vpc-generated-line)", width: 0.75, dash: "7 5" })),
+      ...generatedQuantiles.map(() => ({ stroke: "var(--vpc-generated-line)", width: 0.4, dash: "7 5" })),
     ]}
     bands={[
       { lower: point("low", "lower"), upper: point("low", "upper"), fill: "var(--generated-band-fill)" },

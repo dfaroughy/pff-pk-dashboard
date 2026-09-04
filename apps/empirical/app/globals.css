@@ -40,7 +40,7 @@ button { cursor: pointer; }
   --blue-summary-fill: rgba(11, 127, 131, .14);
   --orange-band-fill: rgba(184, 97, 35, .20);
   --generated-band-fill: rgba(11, 127, 131, .34);
-  --generated-median-band-fill: rgba(11, 127, 131, .22);
+  --generated-median-band-fill: rgba(182, 42, 143, .30);
   min-height: 100vh;
   background: var(--wash);
   color: var(--ink);
@@ -69,7 +69,7 @@ button { cursor: pointer; }
   --blue-summary-fill: rgba(107, 213, 208, .16);
   --orange-band-fill: rgba(241, 166, 106, .22);
   --generated-band-fill: rgba(107, 213, 208, .30);
-  --generated-median-band-fill: rgba(107, 213, 208, .20);
+  --generated-median-band-fill: rgba(240, 82, 214, .25);
   color-scheme: dark;
 }
 
