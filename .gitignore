@@ -1,0 +1,11 @@
+.DS_Store
+apps/*/node_modules/
+apps/*/dist/
+apps/*/portable-dist/
+apps/*/.next/
+apps/*/.vinext/
+apps/*/.wrangler/
+apps/*/outputs/
+services/inference/__pycache__/
+.cache/
+dist/

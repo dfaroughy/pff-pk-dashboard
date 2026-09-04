@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "modelRepository": "OWNER/PFF-MODEL-REPOSITORY",
+  "revision": "FULL_COMMIT_SHA",
+  "checkpoint": "checkpoints/model.ckpt",
+  "configuration": "configs/inference.yaml",
+  "solver": {
+    "method": "heun",
+    "steps": 8
+  }
+}
