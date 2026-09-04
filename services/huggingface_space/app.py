@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 import gradio as gr
-import spaces
 from huggingface_hub import hf_hub_download
 
 ROOT = Path(__file__).resolve().parent
@@ -49,7 +48,6 @@ def health() -> dict[str, str | bool]:
     }
 
 
-@spaces.GPU(duration=120)
 def inference(payload: dict) -> dict:
     """Generate a PK cohort from a validated dashboard request."""
     if not isinstance(payload, dict):

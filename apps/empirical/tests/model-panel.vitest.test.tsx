@@ -41,7 +41,7 @@ const response: InferenceResponse = {
   inferenceId: "test-result",
   createdAt: "2026-09-04T00:00:00Z",
   checkpointId: "test.ckpt",
-  request: { doseEvents: [], nDraws: 100, solver: { method: "heun", steps: 8 }, seed: 1, studyId: study.id },
+  request: { doseEvents: [], nDraws: 20, solver: { method: "heun", steps: 8 }, seed: 1, studyId: study.id },
   queryTime: [0.5, 24],
   generatedConcentration: [[1, 0.1]],
   units: { time: "h", concentration: "ng/mL" },
@@ -51,6 +51,17 @@ const response: InferenceResponse = {
 afterEach(() => {
   cleanup();
   mocks.runInference.mockReset();
+});
+
+test("uses conservative public inference defaults and limits", async () => {
+  render(<ModelPanel study={study} result={null} onResult={vi.fn()} />);
+
+  const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
+  const steps = screen.getByLabelText("Integration steps") as HTMLInputElement;
+  expect(draws.valueAsNumber).toBe(20);
+  expect(draws.max).toBe("30");
+  expect(steps.valueAsNumber).toBe(8);
+  expect(steps.max).toBe("16");
 });
 
 test("intervention dose and time accept full decimal replacement and reach inference", async () => {

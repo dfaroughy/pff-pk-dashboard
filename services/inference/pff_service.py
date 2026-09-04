@@ -50,6 +50,10 @@ DEFAULT_ALLOWED_ORIGINS = {
     "https://pff-pk-empirical-dashboard.dariusfar.chatgpt.site",
     "https://dfaroughy.github.io",
 }
+DEFAULT_GENERATED_INDIVIDUALS = 20
+MAX_GENERATED_INDIVIDUALS = 30
+DEFAULT_FLOW_STEPS = 8
+MAX_FLOW_STEPS = 16
 
 
 def allowed_origins() -> set[str]:
@@ -225,10 +229,20 @@ class ModelRuntime:
     def infer(self, request: dict[str, Any]) -> dict[str, Any]:
         loaded = self.load()
         cohort = build_cohort(request.get("study") or {})
-        n_draws = bounded_integer(request.get("nDraws", 100), "nDraws", 1, 500)
+        n_draws = bounded_integer(
+            request.get("nDraws", DEFAULT_GENERATED_INDIVIDUALS),
+            "nDraws",
+            1,
+            MAX_GENERATED_INDIVIDUALS,
+        )
         solver = request.get("solver") or {}
         method = str(solver.get("method", "heun"))
-        steps = bounded_integer(solver.get("steps", 8), "solver steps", 1, 100)
+        steps = bounded_integer(
+            solver.get("steps", DEFAULT_FLOW_STEPS),
+            "solver steps",
+            1,
+            MAX_FLOW_STEPS,
+        )
         if method not in {"euler", "heun"}:
             raise ValueError("solver method must be Euler or Heun")
         batch_size = bounded_integer(request.get("batchSize", 8), "batchSize", 1, 32)

@@ -58,7 +58,7 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
   const resetDrafts = () => initialProtocol.map((event, index) => doseEventDraft(event, `observed-${index}`));
   const [events, setEvents] = useState<DoseEventDraft[]>(resetDrafts);
   const [nextEventId, setNextEventId] = useState(initialProtocol.length);
-  const [draws, setDraws] = useState("100");
+  const [draws, setDraws] = useState("20");
   const [method, setMethod] = useState<"heun" | "euler">("heun");
   const [steps, setSteps] = useState("8");
   const [status, setStatus] = useState<ServiceStatus | null>(null);
@@ -67,8 +67,8 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
   const eligible = study.subjects.length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
-  const drawsError = validateInteger(draws, 1, 500);
-  const stepsError = validateInteger(steps, 1, 100);
+  const drawsError = validateInteger(draws, 1, 30);
+  const stepsError = validateInteger(steps, 1, 16);
   const controlsValid = protocol.valid && !drawsError && !stepsError;
   useEffect(() => {
     let active = true;
@@ -161,9 +161,9 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
     </div>
     <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div>
     <div className="model-controls">
-      <label className={drawsError ? "invalid" : ""}>Generated individuals <input aria-invalid={Boolean(drawsError)} type="number" min="1" max="500" step="1" value={draws} onChange={(event) => { setDraws(event.target.value); invalidate(); }} />{drawsError && <small className="field-error">{drawsError}</small>}</label>
+      <label className={drawsError ? "invalid" : ""}>Generated individuals <input aria-invalid={Boolean(drawsError)} type="number" min="1" max="30" step="1" value={draws} onChange={(event) => { setDraws(event.target.value); invalidate(); }} />{drawsError && <small className="field-error">{drawsError}</small>}</label>
       <label>Integrator <select value={method} onChange={(event) => { setMethod(event.target.value as "heun" | "euler"); invalidate(); }}><option value="heun">Heun</option><option value="euler">Euler</option></select></label>
-      <label className={stepsError ? "invalid" : ""}>Integration steps <input aria-invalid={Boolean(stepsError)} type="number" min="1" max="100" step="1" value={steps} onChange={(event) => { setSteps(event.target.value); invalidate(); }} />{stepsError && <small className="field-error">{stepsError}</small>}</label>
+      <label className={stepsError ? "invalid" : ""}>Integration steps <input aria-invalid={Boolean(stepsError)} type="number" min="1" max="16" step="1" value={steps} onChange={(event) => { setSteps(event.target.value); invalidate(); }} />{stepsError && <small className="field-error">{stepsError}</small>}</label>
       <label>Checkpoint <input value={status?.checkpointId ?? "Local service"} readOnly /></label>
     </div>
     {!eligible && <p className="model-warning">Interactive PFF inference requires at least two individual trajectories.</p>}

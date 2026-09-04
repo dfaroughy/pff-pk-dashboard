@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import unittest
 
-from services.inference.pff_service import bounded_integer, target_dose_events
+from services.inference.pff_service import (
+    DEFAULT_FLOW_STEPS,
+    DEFAULT_GENERATED_INDIVIDUALS,
+    MAX_FLOW_STEPS,
+    MAX_GENERATED_INDIVIDUALS,
+    bounded_integer,
+    target_dose_events,
+)
 
 
 class RequestValidationTests(unittest.TestCase):
@@ -18,6 +25,16 @@ class RequestValidationTests(unittest.TestCase):
         self.assertEqual(bounded_integer("8", "steps", 1, 100), 8)
         with self.assertRaisesRegex(ValueError, "whole number"):
             bounded_integer(8.5, "steps", 1, 100)
+
+    def test_public_inference_limits_are_conservative(self) -> None:
+        self.assertEqual(DEFAULT_GENERATED_INDIVIDUALS, 20)
+        self.assertEqual(MAX_GENERATED_INDIVIDUALS, 30)
+        self.assertEqual(DEFAULT_FLOW_STEPS, 8)
+        self.assertEqual(MAX_FLOW_STEPS, 16)
+        with self.assertRaisesRegex(ValueError, "between 1 and 30"):
+            bounded_integer(31, "nDraws", 1, MAX_GENERATED_INDIVIDUALS)
+        with self.assertRaisesRegex(ValueError, "between 1 and 16"):
+            bounded_integer(17, "solver steps", 1, MAX_FLOW_STEPS)
 
     def test_events_are_validated_and_sorted(self) -> None:
         events = target_dose_events(
