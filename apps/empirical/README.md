@@ -20,13 +20,21 @@ npm run dev:full
 ```
 
 `dev:full` starts both the web dashboard and the local CPU inference service.
-The active defaults are the `lucid_marten_2741` v6 checkpoint at sparse
-generation phase-2 step 750 and its matching Amarel configuration. Override
-them without changing code:
+The selector exposes two independent runtimes: `Pythia` is the
+`digital_square_8491` generation-only model, while `Pythia-Dose` is the
+`lucid_marten_2741` v6 dose-aware model. The latter remains the default. Override
+their local paths without changing code:
 
 ```bash
-PFF_CHECKPOINT=/path/to/model.ckpt PFF_CONFIG=/path/to/config.yaml npm run dev:full
+PFF_PYTHIA_CHECKPOINT=/path/to/pythia.ckpt \
+PFF_PYTHIA_CONFIG=/path/to/pythia.yaml \
+PFF_DOSE_CHECKPOINT=/path/to/pythia-dose.ckpt \
+PFF_DOSE_CONFIG=/path/to/pythia-dose.yaml \
+npm run dev:full
 ```
+
+The legacy `PFF_CHECKPOINT` and `PFF_CONFIG` variables remain aliases for the
+Pythia-Dose runtime.
 
 ## Portable frontend
 
@@ -91,6 +99,7 @@ npm test
 PFF inference runs in Python/PyTorch, either through the local process or the
 public Hugging Face Gradio service. The browser sends physical observations and
 dose events, receives physical concentration samples, and draws the result.
+Generation evaluates samples at the union of empirical observation times.
 Requests are cached using the request, checkpoint and configuration
 fingerprints. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full contract.

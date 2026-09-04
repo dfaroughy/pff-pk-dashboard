@@ -1,12 +1,87 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { pkEstimates } from "../lib/pk";
-import { runInference, serviceStatus, type InferenceResponse, type ServiceStatus } from "../lib/model-api";
+import { runInference, serviceStatus, type InferenceResponse, type ModelId, type ServiceStatus } from "../lib/model-api";
 import { contextDoseRatio, doseEventDraft, observedProtocol, studyHorizon, validateDoseProtocol, validateInteger, type DoseEventDraft } from "../lib/protocol";
 import { dashboardRuntimeConfig } from "../lib/runtime-config";
 import type { Corpus, Study } from "../lib/types";
-import { ModelTrajectoryChart, ModelVpcChart, TrajectoryChart, VpcChart } from "./StudyCharts";
+import { ModelTrajectoryChart, ModelVpcChart, PkDistributionChart, TrajectoryChart, VpcChart } from "./StudyCharts";
+
+type WikipediaIntro = { paragraph: string; title: string; url: string };
+
+const wikipediaCache = new Map<string, WikipediaIntro | null>();
+const wikipediaFallbacks: Record<string, string> = {
+  "1-hydroxy-midazolam": "midazolam",
+  "4-hydroxy-tolbutamide": "tolbutamide",
+  "5-hydroxy-omeprazole": "omeprazole",
+  "hydroxy-repaglinide": "repaglinide",
+  "omeprazole sulfone": "omeprazole",
+  "paracetamol glucuronide": "paracetamol",
+  "quinidine gluconate": "quinidine",
+  "quinidine sulfate dihydrate": "quinidine",
+  "s-methyl-captopril": "captopril",
+  "theophylline_multidose": "theophylline",
+};
+
+export function firstParagraph(extract: string) {
+  return extract.split(/\n+/).map((paragraph) => paragraph.trim()).find(Boolean) ?? "";
+}
+
+async function wikipediaIntro(study: Study, signal: AbortSignal): Promise<WikipediaIntro | null> {
+  const terms = [...new Set([
+    study.drug,
+    wikipediaFallbacks[study.drug.toLowerCase()],
+    study.administeredDrug,
+  ].filter((term): term is string => Boolean(term)))];
+
+  for (const term of terms) {
+    const cacheKey = term.toLowerCase();
+    if (wikipediaCache.has(cacheKey)) {
+      const cached = wikipediaCache.get(cacheKey) ?? null;
+      if (cached) return cached;
+      continue;
+    }
+    const params = new URLSearchParams({
+      action: "query",
+      titles: term,
+      redirects: "1",
+      prop: "extracts|info",
+      inprop: "url",
+      exintro: "1",
+      explaintext: "1",
+      format: "json",
+      origin: "*",
+    });
+    const response = await fetch(`https://en.wikipedia.org/w/api.php?${params}`, { signal });
+    if (!response.ok) continue;
+    const payload = await response.json() as {
+      query?: { pages?: Record<string, { extract?: string; fullurl?: string; missing?: boolean; title?: string }> };
+    };
+    const page = Object.values(payload.query?.pages ?? {})[0];
+    const paragraph = firstParagraph(page?.extract ?? "");
+    const result = page && !page.missing && paragraph && page.fullurl && page.title
+      ? { paragraph, title: page.title, url: page.fullurl }
+      : null;
+    wikipediaCache.set(cacheKey, result);
+    if (result) return result;
+  }
+  return null;
+}
+
+function WikipediaDescription({ study }: { study: Study }) {
+  const [intro, setIntro] = useState<WikipediaIntro | null | undefined>();
+  useEffect(() => {
+    const controller = new AbortController();
+    wikipediaIntro(study, controller.signal).then(setIntro).catch((error: unknown) => {
+      if (!(error instanceof DOMException && error.name === "AbortError")) setIntro(null);
+    });
+    return () => controller.abort();
+  }, [study]);
+
+  if (intro === undefined) return <p className="description-loading">Loading description…</p>;
+  if (intro === null) return <p className="description-loading">No Wikipedia introduction available.</p>;
+  return <><p>{intro.paragraph}</p><a href={intro.url} target="_blank" rel="noreferrer">Wikipedia · {intro.title} ↗</a></>;
+}
 
 function format(value: number | null) {
   if (value === null || !Number.isFinite(value)) return "Not estimable";
@@ -14,51 +89,56 @@ function format(value: number | null) {
   return value.toLocaleString(undefined, { maximumSignificantDigits: 4 });
 }
 
+function PlotScaleToggle({ logY, onChange, plot }: { logY: boolean; onChange: (logY: boolean) => void; plot: string }) {
+  const nextScale = logY ? "linear" : "logarithmic";
+  return <button
+    className="plot-scale-toggle"
+    type="button"
+    aria-label={`Switch ${plot} to ${nextScale} scale`}
+    aria-pressed={logY}
+    onClick={() => onChange(!logY)}
+  >{logY ? "Log" : "Linear"}</button>;
+}
+
+export function studyLabel(study: Study, studies: Study[]) {
+  const sameDrug = studies.filter((candidate) => candidate.drug === study.drug);
+  if (sameDrug.length === 1) return study.drug;
+  const dose = study.dose === null ? "dose not reported" : `${format(study.dose)} ${study.doseUnit}`;
+  return `${study.drug} — ${dose}`;
+}
+
 function StudySelector({ studies, selected, onSelect }: { studies: Study[]; selected: Study; onSelect: (study: Study) => void }) {
   const [query, setQuery] = useState("");
-  const [origin, setOrigin] = useState("All data");
-  const [expandedDrug, setExpandedDrug] = useState<string | null>(selected.drug);
-  const drugs = useMemo(() => [...new Set(studies.map((study) => study.drug))].sort(), [studies]);
-  const visibleDrugs = drugs.filter((drug) => drug.toLowerCase().includes(query.toLowerCase()) && (origin === "All data" || studies.some((study) => study.drug === drug && study.origin === origin)));
+  const visibleStudies = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return studies.filter((study) => studyLabel(study, studies).toLowerCase().includes(needle));
+  }, [query, studies]);
   return <aside className="study-browser">
     <div className="browser-header">
-      <p className="eyebrow">Study catalogue</p>
-      <h2>{drugs.length} analytes</h2>
-      <input aria-label="Search drugs" placeholder="Search drug or metabolite" value={query} onChange={(event) => setQuery(event.target.value)} />
-      <select aria-label="Filter data source" value={origin} onChange={(event) => setOrigin(event.target.value)}>
-        <option>All data</option><option>Lenuzza 2016</option><option>Empirical individuals</option>
-      </select>
+      <input aria-label="Search drugs" placeholder="Search" value={query} onChange={(event) => setQuery(event.target.value)} />
     </div>
     <div className="drug-list">
-      {visibleDrugs.map((drug) => {
-        const candidates = studies.filter((study) => study.drug === drug && (origin === "All data" || study.origin === origin));
-        const expanded = expandedDrug === drug;
-        return <div className="drug-group" key={drug}>
-          <button className={expanded ? "drug-name expanded" : "drug-name"} type="button" aria-expanded={expanded} onClick={() => setExpandedDrug(expanded ? null : drug)}>{drug}</button>
-          {expanded && <div className="study-children">{candidates.map((study) => <button className={study.id === selected.id ? "study-option active" : "study-option"} key={study.id} onClick={() => onSelect(study)}>
-            <span className={study.origin === "Lenuzza 2016" ? "source-tag lenuzza" : "source-tag"}>{study.origin === "Lenuzza 2016" ? "Lenuzza 2016" : "Empirical"}</span>
-            <span className="study-name">{study.origin === "Lenuzza 2016" ? "CIME cohort" : study.study}</span>
-            <small>{study.route} · {study.dose === null ? "dose NR" : `${format(study.dose)} ${study.doseUnit}`}</small>
-          </button>)}</div>}
-        </div>;
-      })}
-      {!visibleDrugs.length && <p className="empty-catalogue">No matching analytes.</p>}
+      {visibleStudies.map((study) => <button className={study.id === selected.id ? "drug-name active" : "drug-name"} type="button" key={study.id} onClick={() => onSelect(study)}>{studyLabel(study, studies)}</button>)}
+      {!visibleStudies.length && <p className="empty-catalogue">No matches</p>}
     </div>
   </aside>;
 }
 
-export function ModelPanel({ study, result, onResult }: { study: Study; result: InferenceResponse | null; onResult: (result: InferenceResponse | null) => void }) {
+export function ModelPanel({ study, onResult }: { study: Study; onResult: (result: InferenceResponse | null) => void }) {
   const apiRoot = dashboardRuntimeConfig().apiRoot;
   const hosted = !apiRoot.includes("127.0.0.1") && !apiRoot.includes("localhost");
   const protocolUnit = study.dose === null ? "relative exposure" : study.doseUnit;
   const horizon = studyHorizon(study);
   const referenceDose = study.dose ?? 1;
   const abortRequest = useRef<AbortController | null>(null);
-  const initialProtocol = observedProtocol(study, protocolUnit);
+  const initialProtocol = observedProtocol(study, protocolUnit).map((event, index) => (
+    index === 0 ? { ...event, time: 0 } : event
+  ));
   const resetDrafts = () => initialProtocol.map((event, index) => doseEventDraft(event, `observed-${index}`));
   const [events, setEvents] = useState<DoseEventDraft[]>(resetDrafts);
   const [nextEventId, setNextEventId] = useState(initialProtocol.length);
   const [draws, setDraws] = useState("20");
+  const [modelId, setModelId] = useState<ModelId>("pythia");
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
@@ -66,7 +146,9 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
   const drawsError = validateInteger(draws, 1, 30);
-  const controlsValid = protocol.valid && !drawsError;
+  const controlsValid = (modelId === "pythia" || protocol.valid) && !drawsError;
+  const selectedStatus = status?.models?.[modelId]
+    ?? (modelId === (status?.defaultModelId ?? "pythia_dose") ? status : null);
   useEffect(() => {
     let active = true;
     const refresh = () => serviceStatus()
@@ -85,10 +167,12 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
     onResult(null);
   };
   const change = (id: string, field: "time" | "amount", value: string) => {
+    if (id === "observed-0" && field === "time") return;
     setEvents((current) => current.map((event) => event.id === id ? { ...event, [field]: value } : event));
     invalidate();
   };
   const remove = (id: string) => {
+    if (id === "observed-0") return;
     setEvents((current) => current.filter((event) => event.id !== id));
     invalidate();
   };
@@ -99,6 +183,12 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
     invalidate();
   };
   const restoreObservedProtocol = () => {
+    setEvents(resetDrafts());
+    invalidate();
+  };
+  const selectModel = (nextModel: ModelId) => {
+    if (nextModel === modelId) return;
+    setModelId(nextModel);
     setEvents(resetDrafts());
     invalidate();
   };
@@ -113,13 +203,14 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
     setRunning(true); setError(""); onResult(null);
     try {
       const nextResult = await runInference({
+        modelId,
         study: {
           id: study.id, drug: study.drug, study: study.study, source: study.source,
           route: study.route, dose: study.dose, doseUnit: protocolUnit,
           concentrationUnit: study.concentrationUnit, timeUnit: study.timeUnit,
           subjects: study.subjects,
         },
-        doseEvents: protocol.events,
+        doseEvents: modelId === "pythia" ? initialProtocol : protocol.events,
         nDraws: Number(draws),
         batchSize: 8,
         solver: { method: "heun", steps: 8 },
@@ -127,7 +218,7 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
       }, controller.signal);
       if (!controller.signal.aborted) onResult(nextResult);
     } catch (reason) {
-      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "PFF inference failed");
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Pythia-PK inference failed");
     } finally {
       if (abortRequest.current === controller) {
         abortRequest.current = null;
@@ -137,78 +228,80 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
   };
   return <section className="model-panel card">
     <div className="section-heading">
-      <div><p className="eyebrow">Counterfactual protocol</p><h2>PFF zero-shot model</h2></div>
-      <span className={status?.ready ? "status connected" : "status"}>{status?.ready ? `CPU · ${status.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span>
+      <h2>Pythia-PK</h2>
+      <span className={selectedStatus?.ready ? "status connected" : "status"}>{selectedStatus?.ready ? `CPU · ${selectedStatus.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span>
     </div>
-    <p className="muted">The browser sends physical observations and this dose schedule to the inference service. PyTorch performs preprocessing and PFF inference server-side.</p>
-    <p className="protocol-domain">Prediction window: 0–{format(horizon)} {study.timeUnit}. Dose times use {study.timeUnit}; doses use {protocolUnit}.</p>
-    <div className="event-list">
+    <div className="model-selector" role="group" aria-label="Pythia model">
+      <button type="button" className={modelId === "pythia" ? "active" : ""} aria-pressed={modelId === "pythia"} onClick={() => selectModel("pythia")}>Pythia</button>
+      <button type="button" className={modelId === "pythia_dose" ? "active" : ""} aria-pressed={modelId === "pythia_dose"} onClick={() => selectModel("pythia_dose")}>Pythia-Dose</button>
+    </div>
+    {modelId === "pythia_dose" && <><div className="event-list">
       {events.map((event, index) => {
         const eventErrors = protocol.errors[event.id] ?? {};
         const ratio = contextDoseRatio(event.amount, referenceDose);
         return <div className="dose-event" key={event.id}>
           <span className="event-index">{index + 1}</span>
-          <label className={eventErrors.time ? "invalid" : ""}>Time ({study.timeUnit}) <input aria-label={`Dose ${index + 1} time in ${study.timeUnit}`} aria-invalid={Boolean(eventErrors.time)} type="number" min="0" max={horizon} step="any" value={event.time} onChange={(e) => change(event.id, "time", e.target.value)} />{eventErrors.time && <small className="field-error">{eventErrors.time}</small>}</label>
+          <label className={eventErrors.time ? "invalid" : ""}>Time ({study.timeUnit}) <input aria-label={`Dose ${index + 1} time in ${study.timeUnit}`} aria-invalid={Boolean(eventErrors.time)} type="number" min="0" max={horizon} step="any" value={event.time} disabled={index === 0} onChange={(e) => change(event.id, "time", e.target.value)} />{eventErrors.time && <small className="field-error">{eventErrors.time}</small>}</label>
           <label className={eventErrors.amount ? "invalid" : ""}>Dose ({event.unit}) <input aria-label={`Dose ${index + 1} amount in ${event.unit}`} aria-invalid={Boolean(eventErrors.amount)} type="number" min="0" step="any" value={event.amount} onChange={(e) => change(event.id, "amount", e.target.value)} />{eventErrors.amount && <small className="field-error">{eventErrors.amount}</small>}</label>
           <span className="unit">{ratio ?? event.unit}</span>
-          <button type="button" className="icon-button" aria-label={`Remove dose ${index + 1}`} onClick={() => remove(event.id)}>×</button>
+          <button type="button" className="icon-button" aria-label={`Remove dose ${index + 1}`} disabled={index === 0} onClick={() => remove(event.id)}>×</button>
         </div>;
       })}
       {!events.length && <p className="empty-protocol">Add at least one dose event.</p>}
     </div>
-    <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div>
+    <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div></>}
     <div className="model-controls">
       <label className={drawsError ? "invalid" : ""}>Generated individuals <input aria-invalid={Boolean(drawsError)} type="number" min="1" max="30" step="1" value={draws} onChange={(event) => { setDraws(event.target.value); invalidate(); }} />{drawsError && <small className="field-error">{drawsError}</small>}</label>
     </div>
-    {!eligible && <p className="model-warning">Interactive PFF inference requires at least two individual trajectories.</p>}
-    {!status?.ready && <p className="model-warning">{hosted ? "The free hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
-    {eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
-    {eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
+    {!eligible && <p className="model-warning">Interactive Pythia-PK inference requires at least two individual trajectories.</p>}
+    {!selectedStatus?.ready && <p className="model-warning">{hosted ? "The hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
+    {modelId === "pythia_dose" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
+    {modelId === "pythia_dose" && eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
-    <button type="button" className="primary-button" disabled={!status?.ready || !eligible || !controlsValid || running} onClick={submit}>{running ? "Running PyTorch inference…" : "Run zero-shot inference"}</button>
-    <code className="request-preview">PFF API · {events.length} dose event{events.length === 1 ? "" : "s"} · {draws || "—"} generated individuals</code>
-    {result && <p className="completed-request">Artifact <code>{result.inferenceId}</code><br />{result.generatedConcentration.length} draws · {result.provenance.runtimeSeconds.toFixed(1)} s · {result.provenance.normalization}</p>}
+    <div className="inference-actions">
+      <button type="button" className="primary-button" disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={submit}>{running ? "Running inference…" : `Run ${modelId === "pythia" ? "Pythia" : "Pythia-Dose"}`}</button>
+    </div>
   </section>;
 }
 
 export function Dashboard() {
   const [corpus, setCorpus] = useState<Corpus | null>(null);
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
-  const [logY, setLogY] = useState(true);
+  const [vpcLogY, setVpcLogY] = useState(false);
+  const [trajectoryLogY, setTrajectoryLogY] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [modelResult, setModelResult] = useState<InferenceResponse | null>(null);
   const [showStudyContext, setShowStudyContext] = useState(true);
   useEffect(() => { fetch(dashboardRuntimeConfig().corpusUrl).then((response) => response.json()).then(setCorpus); }, []);
   if (!corpus) return <main className="loading"><div className="loading-mark" />Loading PK catalogue…</main>;
   const selected = corpus.studies.find((study) => study.id === selectedId) ?? corpus.studies[0];
-  const estimates = pkEstimates(selected);
   const empiricalVpc = selected.subjects.length > 0;
+  const modelLabel = modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
   return <div className="dashboard-shell" data-theme={darkMode ? "dark" : "light"}>
     <header className="topbar">
-      <div><div className="brand-mark">PFF</div><div><p className="brand-title">Prior-fitted flows for PK/PD</p><p className="brand-subtitle">Empirical cohorts, noncompartmental summaries, and model counterfactuals</p></div></div>
+      <div><div className="brand-mark">P/PK</div><p className="brand-title">Pythia-PK — prior-fitted flows for pharmacokinetics</p></div>
       <div className="topbar-meta">
         <button className="theme-switch" type="button" aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`} aria-pressed={darkMode} onClick={() => setDarkMode(!darkMode)}><i>{darkMode ? "☾" : "☀"}</i><b>{darkMode ? "Dark" : "Light"}</b></button>
-        <span>{corpus.studies.length.toLocaleString()} studies</span><span>schema v{corpus.schemaVersion}</span>
       </div>
     </header>
     <div className="workspace">
       <StudySelector studies={corpus.studies} selected={selected} onSelect={(study) => { setSelectedId(study.id); setModelResult(null); setShowStudyContext(true); }} />
       <main className="content">
         <section className="study-title">
-          <div><p className="eyebrow">{selected.origin}</p><h1>{selected.drug}</h1><p>{selected.study} · {selected.source}</p></div>
+          <h1>{selected.drug}</h1>
           <dl><div><dt>Route</dt><dd>{selected.route}</dd></div><div><dt>Dose</dt><dd>{selected.dose === null ? "Not reported" : `${format(selected.dose)} ${selected.doseUnit}`}</dd></div><div><dt>Individuals</dt><dd>{selected.subjects.length || "Aggregate"}</dd></div><div><dt>Matrix</dt><dd>{selected.medium || "Not reported"}</dd></div></dl>
         </section>
-        <div className="toolbar"><span>{modelResult ? "Study and PFF model" : "Observed data"}</span><div className="toolbar-controls"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button><div className="segmented"><button className={!logY ? "active" : ""} onClick={() => setLogY(false)}>Linear y</button><button className={logY ? "active" : ""} onClick={() => setLogY(true)}>Log y</button></div></div></div>
-        <section className="chart-grid">
-          <article className="card chart-card"><div className="card-heading"><div><p className="eyebrow">{modelResult ? "Observed and generated individuals" : "Individual records"}</p><h2>Concentration–time profiles</h2></div><span className="legend">{modelResult && <><i className="red-line" />PFF draw</>}{(!modelResult || showStudyContext) && <><i className="blue-line" />Study context</>}</span></div>{modelResult ? <ModelTrajectoryChart result={modelResult} study={selected} logY={logY} showEmpirical={showStudyContext} /> : <TrajectoryChart study={selected} logY={logY} />}</article>
-          <article className="card chart-card"><div className="card-heading"><div><p className="eyebrow">{modelResult ? "Observed and generated quantiles" : empiricalVpc ? "Time-wise empirical quantiles" : "Aggregate record"}</p><h2>{modelResult ? "Visual predictive check" : empiricalVpc ? "Observed VPC" : "Published cohort summary"}</h2></div><span className="legend">{modelResult ? <><i className="blue-band" />PFF intervals{showStudyContext && <><i className="blue-line" />Study quantiles</>}</> : <><i className="blue-line" />{empiricalVpc ? "Median" : "Mean"}<i className="orange-line" />{empiricalVpc ? "5–95%" : "±SD"}</>}</span></div>{modelResult ? <ModelVpcChart result={modelResult} study={selected} logY={logY} showEmpirical={showStudyContext} /> : <VpcChart study={selected} logY={logY} />}<p className="chart-note">{modelResult ? `Blue shading denotes the generated 5th and 95th percentile intervals; orange shading denotes the generated median interval.${showStudyContext ? " Blue and orange markers show the observed study median and 5th–95th percentiles." : ""}` : empiricalVpc ? "Quantiles use subjects observed at each exact sampling time; n may vary across time." : "This source reports summary statistics only. The band is mean ± SD and is not an individual-level VPC."}</p></article>
-          <article className="card nca-card"><div className="section-heading"><div><p className="eyebrow">Descriptive noncompartmental analysis</p><h2>Classical PK quantities</h2></div><span className="method-badge">Observed profile</span></div>
-            <dl className="pk-metrics">{estimates.map((estimate) => <div key={estimate.symbol}><dt><code>{estimate.symbol}</code><span>{estimate.label}</span></dt><dd>{format(estimate.value)} <small>{estimate.value === null ? "" : estimate.unit}</small></dd><p>{estimate.note}</p></div>)}</dl>
-            <p className="table-note">Screening-level estimates from the displayed cohort profile; no compartmental model is fitted.</p>
-          </article>
+        <section className="overview-grid">
+          <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} /></article>
+          <ModelPanel key={selected.id} study={selected} onResult={setModelResult} />
         </section>
-        <section className="model-grid">
-          <ModelPanel key={selected.id} study={selected} result={modelResult} onResult={setModelResult} />
+        <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
+        <section className="results-grid">
+          <article className="card chart-card"><div className="card-heading"><h2>VPC</h2><div className="chart-actions"><span className="legend">{modelResult ? <><i className="generated-band" />{modelLabel}{showStudyContext && <><i className="cyan-dashed-line" />Study</>}</> : <><i className="blue-line" />{empiricalVpc ? "Median" : "Mean"}<i className="cyan-dashed-line" />{empiricalVpc ? "5–95%" : "±SD"}</>}</span><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>{modelResult ? <ModelVpcChart result={modelResult} study={selected} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={selected} logY={vpcLogY} />}</article>
+          <article className="card chart-card"><div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}{(!modelResult || showStudyContext) && <><i className="blue-line" />Study</>}</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>{modelResult ? <ModelTrajectoryChart result={modelResult} study={selected} logY={trajectoryLogY} showEmpirical={showStudyContext} /> : <TrajectoryChart study={selected} logY={trajectoryLogY} />}</article>
+          <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
+            <PkDistributionChart study={selected} result={modelResult} />
+          </article>
         </section>
       </main>
     </div>

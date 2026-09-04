@@ -1,13 +1,13 @@
 "use client";
 
 import { useId, useMemo } from "react";
-import { observedVpc, quantile } from "../lib/pk";
+import { observedVpc, pkEstimatesFromPoints, quantile } from "../lib/pk";
 import type { InferenceResponse } from "../lib/model-api";
 import type { Point, Study } from "../lib/types";
 
 const WIDTH = 720;
-const HEIGHT = 360;
-const MARGIN = { left: 62, right: 22, top: 22, bottom: 48 };
+const HEIGHT = 445;
+const MARGIN = { left: 62, right: 22, top: 30, bottom: 52 };
 
 function bounds(series: Point[][], logY: boolean) {
   const points = series.flat().filter(([, y]) => y > 0 && Number.isFinite(y));
@@ -75,7 +75,7 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [] }: 
     <line className="axis" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={HEIGHT - MARGIN.bottom} y2={HEIGHT - MARGIN.bottom} />
     <line className="axis" x1={MARGIN.left} x2={MARGIN.left} y1={MARGIN.top} y2={HEIGHT - MARGIN.bottom} />
     <text className="axis-label" x={(MARGIN.left + WIDTH - MARGIN.right) / 2} y={HEIGHT - 4} textAnchor="middle">{xLabel}</text>
-    <text className="axis-label" x={15} y={HEIGHT / 2} textAnchor="middle" transform={`rotate(-90 15 ${HEIGHT / 2})`}>{yLabel}</text>
+    <text className="axis-label plot-y-title" x={MARGIN.left} y={15} textAnchor="start">{yLabel}</text>
   </svg>;
 }
 
@@ -99,9 +99,9 @@ export function VpcChart({ study, logY }: { study: Study; logY: boolean }) {
   const q50 = vpc.map((point) => [point.time, point.q50] as Point);
   const q95 = vpc.map((point) => [point.time, point.q95] as Point);
   return <Chart series={[q50, q05, q95]} styles={[
-    { stroke: "var(--blue)", width: 1, markers: true, radius: 2.2 },
-    { stroke: "var(--orange)", width: 1, markers: true, radius: 2.2 },
-    { stroke: "var(--orange)", width: 1, markers: true, radius: 2.2 },
+    { stroke: "var(--cyan)", width: 1.5, markers: true, radius: 2.2 },
+    { stroke: "var(--cyan)", width: 0.75, markers: true, radius: 2.2, dash: "7 5" },
+    { stroke: "var(--cyan)", width: 0.75, markers: true, radius: 2.2, dash: "7 5" },
   ]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Observed visual predictive check for ${study.drug}`} />;
 }
 
@@ -117,7 +117,7 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { r
     logY={logY}
     xLabel={`Time (${result.units.time})`}
     yLabel={`Concentration (${result.units.concentration})`}
-    ariaLabel="PFF generated individual concentration profiles"
+    ariaLabel="Pythia-PK generated individual concentration profiles"
   />;
 }
 
@@ -146,17 +146,120 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
     empiricalVpc.map((entry) => [entry.time, entry.q50] as Point),
     empiricalVpc.map((entry) => [entry.time, entry.q95] as Point),
   ] : [];
+  const generatedQuantiles = [
+    point("low", "center"),
+    point("median", "center"),
+    point("high", "center"),
+  ];
   return <Chart
-    series={empiricalSeries}
-    styles={empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--blue)" : "var(--orange)", width: 1, markers: true, radius: 2.1 }))}
+    series={[...empiricalSeries, ...generatedQuantiles]}
+    styles={[
+      ...empiricalSeries.map((_, index) => ({ stroke: "var(--cyan)", width: index === 1 ? 1.5 : 0.75, markers: true, radius: 2.1, dash: index === 1 ? undefined : "7 5" })),
+      ...generatedQuantiles.map(() => ({ stroke: "var(--vpc-generated-line)", width: 0.75, dash: "7 5" })),
+    ]}
     bands={[
-      { lower: point("low", "lower"), upper: point("low", "upper"), fill: "var(--blue-band-fill)" },
-      { lower: point("median", "lower"), upper: point("median", "upper"), fill: "var(--orange-band-fill)" },
-      { lower: point("high", "lower"), upper: point("high", "upper"), fill: "var(--blue-band-fill)" },
+      { lower: point("low", "lower"), upper: point("low", "upper"), fill: "var(--generated-band-fill)" },
+      { lower: point("median", "lower"), upper: point("median", "upper"), fill: "var(--generated-median-band-fill)" },
+      { lower: point("high", "lower"), upper: point("high", "upper"), fill: "var(--generated-band-fill)" },
     ]}
     logY={logY}
     xLabel={`Time (${result.units.time})`}
     yLabel={`Concentration (${result.units.concentration})`}
-    ariaLabel="PFF generated visual predictive check with bootstrap percentile intervals"
+    ariaLabel="Pythia-PK generated visual predictive check with bootstrap percentile intervals"
   />;
+}
+
+const DISTRIBUTION_COLUMNS = 3;
+const DISTRIBUTION_WIDTH = 720;
+const DISTRIBUTION_ROW_HEIGHT = 250;
+const DISTRIBUTION_HEIGHT = DISTRIBUTION_ROW_HEIGHT * 2;
+const DISTRIBUTION_TOP = 52;
+const DISTRIBUTION_BOTTOM = 210;
+
+function compactNumber(value: number) {
+  const magnitude = Math.abs(value);
+  if ((magnitude >= 1e4 || (magnitude > 0 && magnitude < 1e-2))) return value.toExponential(1).replace("e+", "e");
+  return value.toLocaleString(undefined, { maximumSignificantDigits: 3 });
+}
+
+function MetricSymbol({ symbol }: { symbol: string }) {
+  const split = symbol === "Cmax" ? ["C", "max"]
+    : symbol === "Tmax" ? ["T", "max"]
+      : symbol === "AUClast" ? ["AUC", "last"]
+        : null;
+  if (!split) return <>{symbol}</>;
+  return <>{split[0]}<tspan baselineShift="sub" fontSize="65%">{split[1]}</tspan></>;
+}
+
+function DistributionGlyph({ values, center, color, y }: {
+  values: number[]; center: number; color: string; y: (value: number) => number;
+}) {
+  if (!values.length) return null;
+  const q05 = quantile(values, 0.05);
+  const q25 = quantile(values, 0.25);
+  const q50 = quantile(values, 0.5);
+  const q75 = quantile(values, 0.75);
+  const q95 = quantile(values, 0.95);
+  return <g>
+    <line x1={center} x2={center} y1={y(q05)} y2={y(q95)} stroke={color} strokeWidth="1" />
+    <line x1={center - 4} x2={center + 4} y1={y(q05)} y2={y(q05)} stroke={color} strokeWidth="1" />
+    <line x1={center - 4} x2={center + 4} y1={y(q95)} y2={y(q95)} stroke={color} strokeWidth="1" />
+    <rect x={center - 9} y={y(q75)} width="18" height={Math.max(y(q25) - y(q75), 1)} fill={color} fillOpacity="0.42" stroke={color} strokeWidth="1.2" />
+    <line x1={center - 9} x2={center + 9} y1={y(q50)} y2={y(q50)} stroke={color} strokeWidth="1.8" />
+  </g>;
+}
+
+export function PkDistributionChart({ study, result }: { study: Study; result: InferenceResponse | null }) {
+  const metrics = useMemo(() => {
+    const observed = study.subjects.map((subject) => pkEstimatesFromPoints(subject.points, study.concentrationUnit, study.timeUnit));
+    const generated = result?.generatedConcentration.map((values) => pkEstimatesFromPoints(
+      result.queryTime.map((time, index) => [time, values[index]] as Point),
+      result.units.concentration,
+      result.units.time,
+    )) ?? [];
+    const template = observed[0] ?? generated[0] ?? [];
+    return template.map((metric, metricIndex) => ({
+      ...metric,
+      observed: observed.map((profile) => profile[metricIndex]?.value).filter((value): value is number => typeof value === "number" && Number.isFinite(value)),
+      generated: generated.map((profile) => profile[metricIndex]?.value).filter((value): value is number => typeof value === "number" && Number.isFinite(value)),
+    }));
+  }, [result, study]);
+  const panelWidth = DISTRIBUTION_WIDTH / DISTRIBUTION_COLUMNS;
+
+  return <svg className="pk-distribution-chart" viewBox={`0 0 ${DISTRIBUTION_WIDTH} ${DISTRIBUTION_HEIGHT}`} role="img" aria-label="Distributions of observed and Pythia-PK pharmacokinetic quantities">
+    <title>Observed and Pythia-PK distributions of descriptive pharmacokinetic quantities</title>
+    <line className="distribution-separator" x1="0" x2={DISTRIBUTION_WIDTH} y1={DISTRIBUTION_ROW_HEIGHT} y2={DISTRIBUTION_ROW_HEIGHT} />
+    {metrics.map((metric, index) => {
+      const allValues = [...metric.observed, ...metric.generated];
+      const whiskerMin = allValues.length ? quantile(allValues, 0.05) : 0;
+      const whiskerMax = allValues.length ? quantile(allValues, 0.95) : 1;
+      const spread = Math.max(whiskerMax - whiskerMin, Math.abs(whiskerMax) * 0.12, 1e-9);
+      const min = Math.max(0, whiskerMin - spread * 0.12);
+      const max = whiskerMax + spread * 0.12;
+      const row = Math.floor(index / DISTRIBUTION_COLUMNS);
+      const column = index % DISTRIBUTION_COLUMNS;
+      const rowOffset = row * DISTRIBUTION_ROW_HEIGHT;
+      const y = (value: number) => rowOffset + DISTRIBUTION_BOTTOM - (value - min) / (max - min) * (DISTRIBUTION_BOTTOM - DISTRIBUTION_TOP);
+      const scaleTicks = [max, (max + min) / 2, min];
+      const midpoint = panelWidth * (column + 0.5);
+      const observedCenter = midpoint - (metric.generated.length ? 18 : 0);
+      const generatedCenter = midpoint + 18;
+      return <g key={metric.symbol}>
+        <title>{metric.label}</title>
+        {column > 0 && <line className="distribution-separator" x1={panelWidth * column} x2={panelWidth * column} y1={rowOffset + 8} y2={rowOffset + DISTRIBUTION_ROW_HEIGHT - 8} />}
+        <text className="distribution-symbol" x={midpoint} y={rowOffset + 18} textAnchor="middle"><MetricSymbol symbol={metric.symbol} /></text>
+        <text className="distribution-unit" x={midpoint} y={rowOffset + 34} textAnchor="middle">{metric.unit}</text>
+        {scaleTicks.map((tick) => <g key={tick}>
+          <line className="distribution-grid" x1={midpoint - 43} x2={midpoint + 43} y1={y(tick)} y2={y(tick)} />
+          <text className="distribution-value" x={midpoint - 47} y={y(tick) + 3} textAnchor="end">{compactNumber(tick)}</text>
+        </g>)}
+        <DistributionGlyph values={metric.observed} center={observedCenter} color="var(--cyan)" y={y} />
+        <text className="distribution-count" x={observedCenter} y={rowOffset + 232} textAnchor="middle">n={metric.observed.length}</text>
+        {metric.generated.length > 0 && <>
+          <DistributionGlyph values={metric.generated} center={generatedCenter} color="var(--generated)" y={y} />
+          <text className="distribution-count" x={generatedCenter} y={rowOffset + 232} textAnchor="middle">n={metric.generated.length}</text>
+        </>}
+      </g>;
+    })}
+  </svg>;
 }

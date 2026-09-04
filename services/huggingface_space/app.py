@@ -17,37 +17,45 @@ if not MODEL_REPO_ID or not MODEL_REVISION:
 token = os.environ.get("HF_TOKEN") or True
 checkpoint = hf_hub_download(
     repo_id=MODEL_REPO_ID,
-    filename="model.ckpt",
+    filename="models/pythia-dose/model.ckpt",
     revision=MODEL_REVISION,
     token=token,
 )
 config = hf_hub_download(
     repo_id=MODEL_REPO_ID,
-    filename="config.yaml",
+    filename="models/pythia-dose/config.yaml",
+    revision=MODEL_REVISION,
+    token=token,
+)
+pythia_checkpoint = hf_hub_download(
+    repo_id=MODEL_REPO_ID,
+    filename="models/pythia/model.ckpt",
+    revision=MODEL_REVISION,
+    token=token,
+)
+pythia_config = hf_hub_download(
+    repo_id=MODEL_REPO_ID,
+    filename="models/pythia/config.yaml",
     revision=MODEL_REVISION,
     token=token,
 )
 
 os.environ["PFF_REPO"] = str(ROOT)
-os.environ["PFF_CHECKPOINT"] = checkpoint
-os.environ["PFF_CONFIG"] = config
+os.environ["PFF_DOSE_CHECKPOINT"] = checkpoint
+os.environ["PFF_DOSE_CONFIG"] = config
+os.environ["PFF_PYTHIA_CHECKPOINT"] = pythia_checkpoint
+os.environ["PFF_PYTHIA_CONFIG"] = pythia_config
 os.environ.setdefault("PFF_CACHE_ROOT", "/tmp/pff-inference-cache")
 os.environ.setdefault("PFF_CPU_THREADS", "2")
 
-from services.inference.pff_service import RUNTIME, cached_inference  # noqa: E402
+from services.inference.pff_service import cached_inference, service_status  # noqa: E402
 
 PUBLIC_SOLVER = {"method": "heun", "steps": 8}
 
 
-def health() -> dict[str, str | bool]:
+def health() -> dict:
     """Return only non-sensitive deployment metadata."""
-    metadata = RUNTIME.metadata()
-    return {
-        "ready": bool(metadata["ready"]),
-        "loaded": bool(metadata["loaded"]),
-        "device": "cpu",
-        "checkpointId": str(metadata["checkpointId"]),
-    }
+    return service_status()
 
 
 def inference(payload: dict) -> dict:

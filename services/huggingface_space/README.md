@@ -17,6 +17,10 @@ Server-side inference for the public PFF-PK pharmacokinetic dashboard. Model
 weights are loaded from a private, immutable Hugging Face model release and are
 never included in this Space repository or returned by its API.
 
+The release stores the generation-only `digital_square_8491` model under
+`models/pythia/` and the dose-aware v6 model under `models/pythia-dose/`.
+Their checkpoints, configurations and capability manifests remain separate.
+
 The service runs on CPU Basic hardware. It does not use ZeroGPU and therefore
 does not consume visitors' daily GPU quota.
 

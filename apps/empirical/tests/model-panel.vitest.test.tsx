@@ -10,10 +10,16 @@ const mocks = vi.hoisted(() => ({ runInference: vi.fn() }));
 
 vi.mock("../app/lib/model-api", () => ({
   runInference: mocks.runInference,
-  serviceStatus: vi.fn().mockResolvedValue({ ready: true, loaded: true, device: "cpu", checkpointId: "test.ckpt" }),
+  serviceStatus: vi.fn().mockResolvedValue({
+    ready: true, loaded: true, device: "cpu", checkpointId: "dose.ckpt", defaultModelId: "pythia_dose",
+    models: {
+      pythia: { ready: true, loaded: false, device: "cpu", checkpointId: "digital.ckpt", modelId: "pythia", label: "Pythia", supportsDose: false },
+      pythia_dose: { ready: true, loaded: true, device: "cpu", checkpointId: "dose.ckpt", modelId: "pythia_dose", label: "Pythia-Dose", supportsDose: true },
+    },
+  }),
 }));
 
-const { ModelPanel } = await import("../app/components/Dashboard");
+const { ModelPanel, firstParagraph, studyLabel } = await import("../app/components/Dashboard");
 
 const study: Study = {
   id: "test-study",
@@ -41,12 +47,23 @@ const response: InferenceResponse = {
   inferenceId: "test-result",
   createdAt: "2026-09-04T00:00:00Z",
   checkpointId: "test.ckpt",
-  request: { doseEvents: [], nDraws: 20, solver: { method: "heun", steps: 8 }, seed: 1, studyId: study.id },
+  request: { modelId: "pythia_dose", doseEvents: [], nDraws: 20, solver: { method: "heun", steps: 8 }, seed: 1, studyId: study.id },
   queryTime: [0.5, 24],
   generatedConcentration: [[1, 0.1]],
   units: { time: "h", concentration: "ng/mL" },
   provenance: { checkpointSha256: "abc", normalization: "test", sourceProcess: {}, device: "cpu", runtimeSeconds: 0.1 },
 };
+
+test("study labels add dose only when one analyte has multiple datasets", () => {
+  const secondDose = { ...study, id: "test-study-2", dose: 20 };
+  expect(studyLabel(study, [study])).toBe("test drug");
+  expect(studyLabel(study, [study, secondDose])).toBe("test drug — 10 mg");
+  expect(studyLabel(secondDose, [study, secondDose])).toBe("test drug — 20 mg");
+});
+
+test("Wikipedia extracts are reduced to the first paragraph", () => {
+  expect(firstParagraph("First paragraph.\n\nSecond paragraph.")).toBe("First paragraph.");
+});
 
 afterEach(() => {
   cleanup();
@@ -54,7 +71,7 @@ afterEach(() => {
 });
 
 test("exposes only the conservative generated-individual control", async () => {
-  render(<ModelPanel study={study} result={null} onResult={vi.fn()} />);
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
 
   const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
   expect(draws.valueAsNumber).toBe(20);
@@ -62,16 +79,41 @@ test("exposes only the conservative generated-individual control", async () => {
   expect(screen.queryByLabelText("Integrator")).toBeNull();
   expect(screen.queryByLabelText("Integration steps")).toBeNull();
   expect(screen.queryByLabelText("Checkpoint")).toBeNull();
+  expect(screen.getByRole("button", { name: "Pythia" }).getAttribute("aria-pressed")).toBe("true");
+});
+
+test("Pythia is generation-only and sends the baseline protocol", async () => {
+  const user = userEvent.setup();
+  mocks.runInference.mockResolvedValue({
+    ...response,
+    request: { ...response.request, modelId: "pythia" },
+  });
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
+
+  expect(screen.queryByRole("button", { name: "+ Add intervention" })).toBeNull();
+  expect(screen.queryByLabelText("Dose 1 amount in mg")).toBeNull();
+  const runButton = screen.getByRole("button", { name: "Run Pythia" });
+  await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
+  await user.click(runButton);
+
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0].modelId).toBe("pythia");
+  expect(mocks.runInference.mock.calls[0][0].doseEvents).toEqual([
+    { time: 0, amount: 10, unit: "mg", route: "oral" },
+  ]);
 });
 
 test("intervention dose and time accept full decimal replacement and reach inference", async () => {
   const user = userEvent.setup();
   const onResult = vi.fn();
   mocks.runInference.mockResolvedValue(response);
-  render(<ModelPanel study={study} result={null} onResult={onResult} />);
+  render(<ModelPanel study={study} onResult={onResult} />);
 
-  const runButton = await screen.findByRole("button", { name: "Run zero-shot inference" });
+  await user.click(screen.getByRole("button", { name: "Pythia-Dose" }));
+  const runButton = await screen.findByRole("button", { name: "Run Pythia-Dose" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
+  expect((screen.getByLabelText("Dose 1 time in h") as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Remove dose 1" }) as HTMLButtonElement).disabled).toBe(true);
   await user.click(screen.getByRole("button", { name: "+ Add intervention" }));
 
   const time = screen.getByLabelText("Dose 2 time in h");
@@ -91,14 +133,16 @@ test("intervention dose and time accept full decimal replacement and reach infer
     { time: 0, amount: 10, unit: "mg", route: "oral" },
     { time: 2.3, amount: 40, unit: "mg", route: "oral" },
   ]);
+  expect(mocks.runInference.mock.calls[0][0].modelId).toBe("pythia_dose");
   expect(mocks.runInference.mock.calls[0][0].solver).toEqual({ method: "heun", steps: 8 });
   await waitFor(() => expect(onResult).toHaveBeenCalledWith(response));
 });
 
 test("invalid transient values disable inference instead of becoming zero", async () => {
   const user = userEvent.setup();
-  render(<ModelPanel study={study} result={null} onResult={vi.fn()} />);
-  const runButton = await screen.findByRole("button", { name: "Run zero-shot inference" });
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
+  await user.click(screen.getByRole("button", { name: "Pythia-Dose" }));
+  const runButton = await screen.findByRole("button", { name: "Run Pythia-Dose" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
 
   await user.clear(screen.getByLabelText("Dose 1 amount in mg"));
@@ -112,9 +156,10 @@ test("editing a protocol aborts and discards an in-flight result", async () => {
   const onResult = vi.fn();
   let resolveInference: (value: InferenceResponse) => void = () => undefined;
   mocks.runInference.mockReturnValue(new Promise<InferenceResponse>((resolve) => { resolveInference = resolve; }));
-  render(<ModelPanel study={study} result={null} onResult={onResult} />);
+  render(<ModelPanel study={study} onResult={onResult} />);
 
-  const runButton = await screen.findByRole("button", { name: "Run zero-shot inference" });
+  await user.click(screen.getByRole("button", { name: "Pythia-Dose" }));
+  const runButton = await screen.findByRole("button", { name: "Run Pythia-Dose" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   await user.click(runButton);
   await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
@@ -124,7 +169,7 @@ test("editing a protocol aborts and discards an in-flight result", async () => {
   await user.type(amount, "20");
   resolveInference(response);
 
-  await waitFor(() => expect(screen.getByRole("button", { name: "Run zero-shot inference" })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("button", { name: "Run Pythia-Dose" })).toBeTruthy());
   expect(onResult).not.toHaveBeenCalledWith(response);
   expect(onResult).toHaveBeenCalledWith(null);
 });

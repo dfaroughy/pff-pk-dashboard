@@ -36,6 +36,15 @@ inference contract through a CPU Hugging Face Space. Caching the
 context encoding and GP factor across separate protocol requests remains a
 performance improvement.
 
+Every request names one model. `Pythia` uses the standardized-log
+`digital_square_8491` checkpoint and supports cohort generation at the
+empirical reference protocol. `Pythia-Dose` uses the v6 event-operator
+checkpoint and supports dose counterfactuals and interventions. Both models
+generate on the union of empirical observation times. The service maintains
+separate lazy runtimes, preprocessing configurations, checkpoint hashes, and
+caches. It rejects edited dose protocols for Pythia rather than silently
+ignoring them.
+
 ## Phase 4 — dose counterfactuals and interventions
 
 A protocol is an ordered sequence of dose events `(time, amount, unit, route)`.

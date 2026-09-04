@@ -14,7 +14,6 @@ import math
 import os
 import sys
 import time
-from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -43,6 +42,11 @@ DEFAULT_CHECKPOINT = (
     PFF_ROOT / "artifacts" / "checkpoints" / "lucid_marten_v6_step750"
     / "lucid_marten_step750_last.ckpt"
 )
+DEFAULT_PYTHIA_CONFIG = PFF_ROOT / "configs" / "phase2_sparse.yaml"
+DEFAULT_PYTHIA_CHECKPOINT = (
+    PFF_ROOT / "artifacts" / "checkpoints" / "digital_square_step120000"
+    / "fixed-bank-full-best.ckpt"
+)
 CACHE_ROOT = Path(
     os.environ.get("PFF_CACHE_ROOT", REPOSITORY_ROOT / ".cache" / "inference")
 ).resolve()
@@ -54,6 +58,9 @@ DEFAULT_GENERATED_INDIVIDUALS = 20
 MAX_GENERATED_INDIVIDUALS = 30
 DEFAULT_FLOW_STEPS = 8
 MAX_FLOW_STEPS = 16
+PYTHIA_MODEL = "pythia"
+PYTHIA_DOSE_MODEL = "pythia_dose"
+DEFAULT_MODEL = PYTHIA_DOSE_MODEL
 
 
 def allowed_origins() -> set[str]:
@@ -91,6 +98,14 @@ def bounded_integer(value: Any, field: str, low: int, high: int) -> int:
     if not numeric.is_integer() or not low <= numeric <= high:
         raise ValueError(f"{field} must be a whole number between {low} and {high}")
     return int(numeric)
+
+
+def requested_model(request: dict[str, Any]) -> str:
+    """Resolve a public model identifier with a dose-capable default."""
+    model_id = str(request.get("modelId", DEFAULT_MODEL)).strip().lower()
+    if model_id not in {PYTHIA_MODEL, PYTHIA_DOSE_MODEL}:
+        raise ValueError("modelId must be pythia or pythia_dose")
+    return model_id
 
 
 def route(value: Any) -> str:
@@ -184,12 +199,47 @@ def target_dose_events(
     return sorted(events, key=lambda event: float(event["time"]))
 
 
+def generation_only_protocol(
+    raw_events: Any, cohort: dict[str, Any]
+) -> list[dict[str, float | str]]:
+    """Accept only the empirical reference protocol for the dose-naive model."""
+    events = target_dose_events(raw_events, cohort)
+    dose = _finite_reference_dose(cohort)
+    matches_reference = (
+        len(events) == 1
+        and math.isclose(float(events[0]["time"]), 0.0, abs_tol=1.0e-9)
+        and math.isclose(float(events[0]["duration"]), 0.0, abs_tol=1.0e-9)
+        and math.isclose(float(events[0]["amount"]), dose, rel_tol=1.0e-7, abs_tol=1.0e-9)
+        and str(events[0]["route"]) == cohort["route"]
+    )
+    if not matches_reference:
+        raise ValueError(
+            "Pythia supports generation at the empirical reference dose only; "
+            "select Pythia-Dose for dose counterfactuals or interventions"
+        )
+    return events
+
+
+def _finite_reference_dose(cohort: dict[str, Any]) -> float:
+    dose = finite(cohort.get("dose", 1.0), "context dose")
+    return dose if dose > 0 else 1.0
+
+
 class ModelRuntime:
-    def __init__(self) -> None:
-        self.config_path = Path(os.environ.get("PFF_CONFIG", DEFAULT_CONFIG)).resolve()
-        self.checkpoint_path = Path(
-            os.environ.get("PFF_CHECKPOINT", DEFAULT_CHECKPOINT)
-        ).resolve()
+    def __init__(
+        self,
+        *,
+        model_id: str,
+        label: str,
+        supports_dose: bool,
+        config_path: Path,
+        checkpoint_path: Path,
+    ) -> None:
+        self.model_id = model_id
+        self.label = label
+        self.supports_dose = supports_dose
+        self.config_path = config_path.resolve()
+        self.checkpoint_path = checkpoint_path.resolve()
         self.device = torch.device("cpu")
         self.loaded = None
         self.checkpoint_sha256: str | None = None
@@ -197,6 +247,9 @@ class ModelRuntime:
 
     def metadata(self) -> dict[str, Any]:
         return {
+            "modelId": self.model_id,
+            "label": self.label,
+            "supportsDose": self.supports_dose,
             "ready": self.config_path.is_file() and self.checkpoint_path.is_file(),
             "loaded": self.loaded is not None,
             "device": "cpu",
@@ -227,6 +280,8 @@ class ModelRuntime:
         return self.loaded
 
     def infer(self, request: dict[str, Any]) -> dict[str, Any]:
+        if requested_model(request) != self.model_id:
+            raise ValueError("inference request was routed to the wrong model")
         loaded = self.load()
         cohort = build_cohort(request.get("study") or {})
         n_draws = bounded_integer(
@@ -246,13 +301,19 @@ class ModelRuntime:
         if method not in {"euler", "heun"}:
             raise ValueError("solver method must be Euler or Heun")
         batch_size = bounded_integer(request.get("batchSize", 8), "batchSize", 1, 32)
-
-        target_events = target_dose_events(request.get("doseEvents"), cohort)
+        target_events = (
+            target_dose_events(request.get("doseEvents"), cohort)
+            if self.supports_dose
+            else generation_only_protocol(request.get("doseEvents"), cohort)
+        )
 
         cpu_batch, _, _ = empirical_cohort_batch(
             cohort,
             normalization=loaded.normalization,
-            target_dose_events=target_events,
+            # The original Pythia checkpoint predates the dose-event operator.
+            # Its reference protocol is validated above but must not be encoded
+            # as a model input.
+            target_dose_events=target_events if self.supports_dose else None,
         )
         cpu_batch = union_query_batch(cpu_batch)
         query_time = cpu_batch.target_time.numpy()[0, :, 0] * cohort["horizon"]
@@ -279,6 +340,7 @@ class ModelRuntime:
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "checkpointId": self.checkpoint_path.stem,
             "request": {
+                "modelId": self.model_id,
                 "studyId": request.get("study", {}).get("id"),
                 "doseEvents": target_events,
                 "nDraws": n_draws,
@@ -298,26 +360,80 @@ class ModelRuntime:
         }
 
 
-RUNTIME = ModelRuntime()
+def configured_path(primary: str, legacy: str | None, default: Path) -> Path:
+    value = os.environ.get(primary)
+    if value is None and legacy is not None:
+        value = os.environ.get(legacy)
+    return Path(value) if value else default
+
+
+RUNTIMES = {
+    PYTHIA_MODEL: ModelRuntime(
+        model_id=PYTHIA_MODEL,
+        label="Pythia",
+        supports_dose=False,
+        config_path=configured_path("PFF_PYTHIA_CONFIG", None, DEFAULT_PYTHIA_CONFIG),
+        checkpoint_path=configured_path(
+            "PFF_PYTHIA_CHECKPOINT", None, DEFAULT_PYTHIA_CHECKPOINT
+        ),
+    ),
+    PYTHIA_DOSE_MODEL: ModelRuntime(
+        model_id=PYTHIA_DOSE_MODEL,
+        label="Pythia-Dose",
+        supports_dose=True,
+        config_path=configured_path("PFF_DOSE_CONFIG", "PFF_CONFIG", DEFAULT_CONFIG),
+        checkpoint_path=configured_path(
+            "PFF_DOSE_CHECKPOINT", "PFF_CHECKPOINT", DEFAULT_CHECKPOINT
+        ),
+    ),
+}
+# Backward-compatible alias for scripts which explicitly mean the dose model.
+RUNTIME = RUNTIMES[DEFAULT_MODEL]
+
+
+def runtime_for_request(request: dict[str, Any]) -> ModelRuntime:
+    return RUNTIMES[requested_model(request)]
+
+
+def service_status() -> dict[str, Any]:
+    """Return public capability and readiness metadata for every model."""
+    models = {
+        model_id: {
+            key: value
+            for key, value in runtime.metadata().items()
+            if key not in {"config", "checkpoint"}
+        }
+        for model_id, runtime in RUNTIMES.items()
+    }
+    default = models[DEFAULT_MODEL]
+    return {
+        "ready": bool(default["ready"]),
+        "loaded": bool(default["loaded"]),
+        "device": "cpu",
+        "checkpointId": str(default["checkpointId"]),
+        "defaultModelId": DEFAULT_MODEL,
+        "models": models,
+    }
 
 
 def cached_inference(request: dict[str, Any]) -> dict[str, Any]:
     """Run one validated request and persist the immutable response by content hash."""
     if not isinstance(request, dict):
         raise ValueError("inference request must be a JSON object")
-    RUNTIME.load()
+    runtime = runtime_for_request(request)
+    runtime.load()
     cache_key = {
         "schemaVersion": 1,
         "request": request,
-        "checkpointSha256": RUNTIME.checkpoint_sha256,
-        "configSha256": hashlib.sha256(RUNTIME.config_path.read_bytes()).hexdigest(),
+        "checkpointSha256": runtime.checkpoint_sha256,
+        "configSha256": hashlib.sha256(runtime.config_path.read_bytes()).hexdigest(),
     }
     canonical = json.dumps(cache_key, sort_keys=True, separators=(",", ":")).encode()
     inference_id = hashlib.sha256(canonical).hexdigest()[:20]
     destination = CACHE_ROOT / f"{inference_id}.json"
     if destination.exists():
         return json.loads(destination.read_text(encoding="utf-8"))
-    result = RUNTIME.infer(request)
+    result = runtime.infer(request)
     result["inferenceId"] = inference_id
     CACHE_ROOT.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(".tmp")
@@ -354,7 +470,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/health":
-            self._send(200, RUNTIME.metadata())
+            self._send(200, service_status())
         else:
             self._send(404, {"error": "not found"})
 
@@ -380,7 +496,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     host = os.environ.get("PFF_API_HOST", "127.0.0.1")
     port = int(os.environ.get("PFF_API_PORT", "8791"))
-    print(json.dumps({"service": f"http://{host}:{port}", **RUNTIME.metadata()}, indent=2))
+    print(json.dumps({"service": f"http://{host}:{port}", **service_status()}, indent=2))
     HTTPServer((host, port), Handler).serve_forever()
 
 

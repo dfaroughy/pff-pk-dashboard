@@ -8,6 +8,8 @@ from services.inference.pff_service import (
     MAX_FLOW_STEPS,
     MAX_GENERATED_INDIVIDUALS,
     bounded_integer,
+    generation_only_protocol,
+    requested_model,
     target_dose_events,
 )
 
@@ -19,6 +21,7 @@ class RequestValidationTests(unittest.TestCase):
             "time_units": "h",
             "horizon": 24.0,
             "route": "oral",
+            "dose": "10",
         }
 
     def test_integer_controls_are_not_truncated(self) -> None:
@@ -53,6 +56,31 @@ class RequestValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "observation horizon"):
             target_dose_events([{"time": 24, "amount": 10, "duration": 1, "unit": "mg"}], self.cohort)
 
+    def test_model_selection_defaults_to_dose_and_rejects_unknown_models(self) -> None:
+        self.assertEqual(requested_model({}), "pythia_dose")
+        self.assertEqual(requested_model({"modelId": "pythia"}), "pythia")
+        with self.assertRaisesRegex(ValueError, "modelId"):
+            requested_model({"modelId": "unknown"})
+
+    def test_generation_only_model_rejects_dose_counterfactuals(self) -> None:
+        baseline = generation_only_protocol(
+            [{"time": 0, "amount": 10, "unit": "mg", "route": "oral"}],
+            self.cohort,
+        )
+        self.assertEqual(len(baseline), 1)
+        with self.assertRaisesRegex(ValueError, "Pythia-Dose"):
+            generation_only_protocol(
+                [{"time": 0, "amount": 20, "unit": "mg", "route": "oral"}],
+                self.cohort,
+            )
+        with self.assertRaisesRegex(ValueError, "Pythia-Dose"):
+            generation_only_protocol(
+                [
+                    {"time": 0, "amount": 10, "unit": "mg", "route": "oral"},
+                    {"time": 4, "amount": 10, "unit": "mg", "route": "oral"},
+                ],
+                self.cohort,
+            )
 
 if __name__ == "__main__":
     unittest.main()

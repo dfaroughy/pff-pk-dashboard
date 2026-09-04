@@ -2,7 +2,10 @@ import { Client } from "@gradio/client";
 import type { DoseEvent, Study } from "./types";
 import { dashboardRuntimeConfig } from "./runtime-config";
 
+export type ModelId = "pythia" | "pythia_dose";
+
 export type InferenceRequest = {
+  modelId: ModelId;
   study: Pick<Study, "id" | "drug" | "study" | "source" | "route" | "dose" | "doseUnit" | "concentrationUnit" | "timeUnit" | "subjects">;
   doseEvents: DoseEvent[];
   nDraws: number;
@@ -28,11 +31,19 @@ export type InferenceResponse = {
   };
 };
 
-export type ServiceStatus = {
+export type ModelStatus = {
   ready: boolean;
   loaded: boolean;
   device: "cpu";
   checkpointId: string;
+  modelId?: ModelId;
+  label?: string;
+  supportsDose?: boolean;
+};
+
+export type ServiceStatus = ModelStatus & {
+  defaultModelId?: ModelId;
+  models?: Partial<Record<ModelId, ModelStatus>>;
 };
 
 const hostedClients = new Map<string, Promise<Client>>();
@@ -84,7 +95,7 @@ export async function serviceStatus(): Promise<ServiceStatus> {
   const { apiRoot } = dashboardRuntimeConfig();
   if (!isLocalApi(apiRoot)) return hostedPrediction<ServiceStatus>(apiRoot, "/health", {});
   const response = await fetch(`${apiRoot}/health`);
-  if (!response.ok) throw new Error("PFF service is unavailable");
+  if (!response.ok) throw new Error("Pythia-PK service is unavailable");
   return response.json() as Promise<ServiceStatus>;
 }
 
@@ -103,6 +114,6 @@ export async function runInference(request: InferenceRequest, signal?: AbortSign
     signal,
   });
   const payload = await response.json() as InferenceResponse | { error: string };
-  if (!response.ok) throw new Error("error" in payload ? payload.error : `PFF inference failed (${response.status})`);
+  if (!response.ok) throw new Error("error" in payload ? payload.error : `Pythia-PK inference failed (${response.status})`);
   return payload as InferenceResponse;
 }

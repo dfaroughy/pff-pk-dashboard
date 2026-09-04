@@ -25,5 +25,5 @@ export type Study = {
 
 export type Corpus = { schemaVersion: number; generatedAt: string; studies: Study[] };
 
-export type PkEstimate = { label: string; symbol: string; value: number | null; unit: string; note: string };
+export type PkEstimate = { label: string; symbol: string; value: number | null; unit: string };
 export type VpcPoint = { time: number; q05: number; q50: number; q95: number; n: number };

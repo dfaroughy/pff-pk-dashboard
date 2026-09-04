@@ -7,6 +7,7 @@ import csv
 import json
 import math
 import os
+import re
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,6 +16,20 @@ from typing import Any
 PFFF_ROOT = Path(os.environ.get("PFFF_ROOT", Path(__file__).resolve().parents[3])).resolve()
 ROOT = Path(os.environ.get("PFFF_EMPIRICAL_ROOT", PFFF_ROOT / "corpora" / "empirical")).resolve()
 OUT = Path(__file__).resolve().parents[1] / "public" / "data" / "corpus.json"
+
+EXCLUDED_ANALYTES = {
+    "3,4,5-trichloropyridin-2-ol",
+    "captopril disulfide",
+    "captopril substances",
+    "furosemide",
+    "glimepiride",
+    "hydrochlorothiazide",
+    "nimotuzumab",
+    "phenobarbital",
+    "quinidine",
+    "total captopril",
+    "warfarin",
+}
 
 
 def number(value: Any) -> float | None:
@@ -32,6 +47,90 @@ def text(value: Any) -> str:
 def slug(*parts: Any) -> str:
     raw = "-".join(text(part).lower() for part in parts if text(part))
     return "".join(char if char.isalnum() else "-" for char in raw).strip("-")
+
+
+def include_in_dashboard(study: dict[str, Any]) -> bool:
+    """Apply the explicitly curated dashboard study selection."""
+    drug = text(study.get("drug")).lower()
+    study_name = text(study.get("study")).lower()
+    source = text(study.get("source")).lower()
+
+    if drug in EXCLUDED_ANALYTES:
+        return False
+    if drug == "phenacetin" and "1176" in study_name:
+        return False
+    if drug == "empagliflozin" and "eldash2021" not in study_name:
+        return False
+    if drug == "dapagliflozin" and source != "koenig/dapagliflozin-model":
+        return False
+    if drug == "captopril" and "cohen1982" not in study_name:
+        return False
+    if drug == "caffeine" and study.get("origin") != "Lenuzza 2016":
+        return False
+    return True
+
+
+def combine_studies(
+    studies: list[dict[str, Any]],
+    *,
+    drug: str,
+    combined_id: str,
+    combined_study: str,
+) -> list[dict[str, Any]]:
+    """Combine compatible cohorts of one analyte into one dashboard dataset."""
+    matches = [study for study in studies if text(study.get("drug")).lower() == drug]
+    if len(matches) < 2:
+        raise ValueError(f"Expected at least two {drug} cohorts to combine")
+
+    compatibility_fields = (
+        "drug", "administeredDrug", "origin", "route", "dose", "doseUnit",
+        "concentrationUnit", "timeUnit", "medium", "unitClass",
+    )
+    reference = matches[0]
+    for candidate in matches[1:]:
+        incompatible = [
+            field for field in compatibility_fields
+            if candidate.get(field) != reference.get(field)
+        ]
+        if incompatible:
+            raise ValueError(
+                f"Cannot combine {drug} cohorts; incompatible fields: "
+                f"{', '.join(incompatible)}"
+            )
+
+    subjects = [subject for study in matches for subject in study["subjects"]]
+    subject_ids = [subject["id"] for subject in subjects]
+    if len(subject_ids) != len(set(subject_ids)):
+        raise ValueError(f"Cannot combine {drug} cohorts with repeated subject IDs")
+
+    combined = dict(reference)
+    combined.update({
+        "id": combined_id,
+        "study": combined_study,
+        "source": " + ".join(dict.fromkeys(study["source"] for study in matches)),
+        "subjects": subjects,
+        "summary": [],
+    })
+    retained = [study for study in studies if study not in matches]
+    retained.append(combined)
+    return retained
+
+
+def curate_studies(studies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    curated = [study for study in studies if include_in_dashboard(study)]
+    curated = combine_studies(
+        curated,
+        drug="tetracycline",
+        combined_id="empirical-combined-tetracycline",
+        combined_study="Combined tetracycline cohorts",
+    )
+    curated = combine_studies(
+        curated,
+        drug="s-methyl-captopril",
+        combined_id="empirical-combined-s-methyl-captopril",
+        combined_study="Combined S-methyl-captopril cohorts",
+    )
+    return curated
 
 
 def load_individual_studies() -> list[dict[str, Any]]:
@@ -180,8 +279,13 @@ def load_lenuzza() -> list[dict[str, Any]]:
 
 
 def main() -> None:
-    studies = load_lenuzza() + load_individual_studies()
-    studies.sort(key=lambda item: (item["drug"], item["origin"], item["study"], item["id"]))
+    studies = curate_studies(load_lenuzza() + load_individual_studies())
+    studies.sort(key=lambda item: (
+        bool(re.match(r"^\d+-hydroxy", item["drug"].lower())),
+        item["drug"].lower(),
+        math.inf if item["dose"] is None else item["dose"],
+        item["doseUnit"], item["study"], item["id"],
+    ))
     payload = {
         "schemaVersion": 1,
         "generatedAt": datetime.now(UTC).isoformat(),

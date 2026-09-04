@@ -1,4 +1,4 @@
-import type { PkEstimate, Point, Study, VpcPoint } from "./types";
+import type { PkEstimate, Point, VpcPoint } from "./types";
 
 export function quantile(values: number[], probability: number): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -9,16 +9,7 @@ export function quantile(values: number[], probability: number): number {
   return sorted[lower] + fraction * ((sorted[lower + 1] ?? sorted[lower]) - sorted[lower]);
 }
 
-export function representativeCurve(study: Study): Point[] {
-  if (study.summary.length) return study.summary.map((point) => [point.time, point.mean]);
-  const byTime = new Map<number, number[]>();
-  study.subjects.forEach((subject) => subject.points.forEach(([time, value]) => {
-    byTime.set(time, [...(byTime.get(time) ?? []), value]);
-  }));
-  return [...byTime.entries()].sort(([a], [b]) => a - b).map(([time, values]) => [time, quantile(values, 0.5)]);
-}
-
-export function observedVpc(study: Study): VpcPoint[] {
+export function observedVpc(study: { subjects: { points: Point[] }[] }): VpcPoint[] {
   const byTime = new Map<number, number[]>();
   study.subjects.forEach((subject) => subject.points.forEach(([time, value]) => {
     byTime.set(time, [...(byTime.get(time) ?? []), value]);
@@ -49,17 +40,18 @@ function terminalSlope(points: Point[]): number | null {
   return slope < 0 ? -slope : null;
 }
 
-export function pkEstimates(study: Study): PkEstimate[] {
-  const points = representativeCurve(study);
+export function pkEstimatesFromPoints(points: Point[], concentrationUnit: string, timeUnit: string): PkEstimate[] {
+  points = points
+    .filter(([time, value]) => Number.isFinite(time) && Number.isFinite(value) && value > 0)
+    .sort(([left], [right]) => left - right);
   if (!points.length) return [];
   const peak = points.reduce((best, point, index) => point[1] > points[best][1] ? index : best, 0);
   const lambda = terminalSlope(points);
-  const concentrationUnit = study.concentrationUnit;
   return [
-    { label: "Maximum observed concentration", symbol: "Cmax", value: points[peak][1], unit: concentrationUnit, note: "Observed median/mean profile" },
-    { label: "Time of maximum concentration", symbol: "Tmax", value: points[peak][0], unit: study.timeUnit, note: "Observed median/mean profile" },
-    { label: "Area under curve to last sample", symbol: "AUClast", value: auc(points), unit: `${concentrationUnit}·${study.timeUnit}`, note: "Linear trapezoidal rule" },
-    { label: "Terminal elimination rate", symbol: "λz", value: lambda, unit: `${study.timeUnit}⁻¹`, note: "Log-linear fit to terminal points" },
-    { label: "Terminal half-life", symbol: "t½", value: lambda ? Math.log(2) / lambda : null, unit: study.timeUnit, note: "ln(2)/λz; descriptive estimate" },
+    { label: "Maximum observed concentration", symbol: "Cmax", value: points[peak][1], unit: concentrationUnit },
+    { label: "Time of maximum concentration", symbol: "Tmax", value: points[peak][0], unit: timeUnit },
+    { label: "Area under curve to last sample", symbol: "AUClast", value: auc(points), unit: `${concentrationUnit}·${timeUnit}` },
+    { label: "Terminal elimination rate", symbol: "λz", value: lambda, unit: `${timeUnit}⁻¹` },
+    { label: "Terminal half-life", symbol: "t½", value: lambda ? Math.log(2) / lambda : null, unit: timeUnit },
   ];
 }
