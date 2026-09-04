@@ -36,6 +36,8 @@ os.environ.setdefault("PFF_CPU_THREADS", "2")
 
 from services.inference.pff_service import RUNTIME, cached_inference  # noqa: E402
 
+PUBLIC_SOLVER = {"method": "heun", "steps": 8}
+
 
 def health() -> dict[str, str | bool]:
     """Return only non-sensitive deployment metadata."""
@@ -53,7 +55,15 @@ def inference(payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise gr.Error("The inference request must be a JSON object")
     try:
-        return cached_inference(payload)
+        solver = payload.get("solver") or PUBLIC_SOLVER
+        if not isinstance(solver, dict):
+            raise ValueError("The public demo uses fixed Heun integration with 8 steps")
+        if (
+            str(solver.get("method", "")).lower() != PUBLIC_SOLVER["method"]
+            or float(solver.get("steps", 0)) != PUBLIC_SOLVER["steps"]
+        ):
+            raise ValueError("The public demo uses fixed Heun integration with 8 steps")
+        return cached_inference({**payload, "solver": PUBLIC_SOLVER.copy()})
     except (ValueError, KeyError, TypeError, FileNotFoundError) as error:
         raise gr.Error(str(error)) from error
     except Exception as error:

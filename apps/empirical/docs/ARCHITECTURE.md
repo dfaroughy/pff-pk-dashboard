@@ -24,25 +24,25 @@ requested dose events, code commit and creation time. The dashboard can compare
 observations, samples and VPCs without running a model interactively. This is
 the reproducible path for paper figures.
 
-## Phase 3 — online zero-shot inference (implemented locally)
+## Phase 3 — online zero-shot inference (implemented)
 
 The browser calls the `POST /inference` contract in `app/lib/model-api.ts`.
 The shared Python service in `services/inference/` validates units and dose events, creates a content-addressed
 request, and runs `pff_pk` with PyTorch. It loads the checkpoint once, generates
 draws, writes a persistent JSON artifact, and returns its identifier. The
-current local service uses CPU Heun/8 by default. The public deployment will
-use the same inference contract through a Hugging Face Space. Caching the
+public dashboard fixes integration to eight Heun steps and exposes only the
+number of generated individuals (20 by default, at most 30). It uses the same
+inference contract through a CPU Hugging Face Space. Caching the
 context encoding and GP factor across separate protocol requests remains a
 performance improvement.
 
 ## Phase 4 — dose counterfactuals and interventions
 
 A protocol is an ordered sequence of dose events `(time, amount, unit, route)`.
-The dashboard will support a baseline dose, proportional-dose controls, and
-additional events. A returned view must show observed baseline data separately
-from the model counterfactual, because the latter is not an observation. The UI
-will expose trajectory draws, 5th/50th/95th model quantiles, differences from
-baseline, and dose-linearity diagnostics.
+The dashboard supports a baseline dose and additional dose events. Observed
+study trajectories remain visually distinct from generated counterfactuals,
+even when they share an axis. The UI overlays generated trajectories and VPC
+uncertainty on the study panels and can hide the study context for inspection.
 
 ## Acceptance criteria
 

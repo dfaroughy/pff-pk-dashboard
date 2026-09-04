@@ -148,7 +148,7 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
   ] : [];
   return <Chart
     series={empiricalSeries}
-    styles={empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--orange)" : "var(--blue)", width: 1, markers: true, radius: 2.1 }))}
+    styles={empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--blue)" : "var(--orange)", width: 1, markers: true, radius: 2.1 }))}
     bands={[
       { lower: point("low", "lower"), upper: point("low", "upper"), fill: "var(--blue-band-fill)" },
       { lower: point("median", "lower"), upper: point("median", "upper"), fill: "var(--orange-band-fill)" },

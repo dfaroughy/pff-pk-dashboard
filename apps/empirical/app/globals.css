@@ -244,6 +244,7 @@ button { cursor: pointer; }
   letter-spacing: .12em;
   text-transform: uppercase;
 }
+.toolbar-controls { display: flex; align-items: center; gap: 8px; }
 .segmented { border: 1px solid var(--line); background: var(--paper); padding: 2px; }
 .segmented button { border: 0; padding: 5px 9px; background: transparent; color: var(--muted); font-size: 9px; letter-spacing: 0; text-transform: none; }
 .segmented button.active { background: var(--acid-fill); color: #142015; }
@@ -312,7 +313,7 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .secondary-button { margin-top: 9px; border: 1px solid var(--line-bright); border-radius: 0; padding: 7px 10px; background: transparent; color: var(--ink); font-size: 9px; }
 .secondary-button:hover { border-color: var(--cyan); color: var(--cyan); }
 .secondary-button.quiet { border-color: transparent; color: var(--muted); }
-.model-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 14px 0 10px; }
+.model-controls { display: grid; max-width: 230px; margin: 14px 0 10px; }
 .primary-button { width: 100%; border: 1px solid var(--acid-fill); border-radius: 0; padding: 10px; background: var(--acid-fill); color: #142015; font-size: 10px; font-weight: 750; letter-spacing: .035em; }
 .primary-button:hover:not(:disabled) { background: transparent; color: var(--acid); }
 .primary-button:disabled { border-color: var(--line); background: var(--line); color: var(--muted); cursor: not-allowed; }
@@ -321,12 +322,10 @@ td:first-child { color: var(--ink); font-weight: 600; }
 .model-warning { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 9%, transparent); color: var(--orange); }
 .model-error { border-color: var(--magenta); background: color-mix(in srgb, var(--magenta) 9%, transparent); color: var(--magenta); }
 .completed-request { margin: 10px 0 0; color: var(--muted); font-size: 8px; line-height: 1.5; overflow-wrap: anywhere; }
-.card-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
 .overlay-toggle { border: 1px solid var(--line-bright); border-radius: 0; padding: 7px 11px; background: var(--paper); color: var(--muted); font-size: 9px; }
 .overlay-toggle.active { border-color: var(--cyan); color: var(--cyan); }
-.model-grid { display: grid; grid-template-columns: minmax(345px, .85fr) minmax(0, 1.15fr) minmax(0, 1.15fr); gap: 10px; align-items: start; margin-top: 29px; padding-top: 17px; border-top: 1px solid var(--line); }
-.model-chart-card { min-height: 430px; }
-.model-placeholder { height: 345px; display: grid; place-items: center; border: 1px dashed var(--line-bright); padding: 25px; background: var(--panel-raised); color: var(--muted); text-align: center; font-family: var(--font-data); font-size: 9px; line-height: 1.6; }
+.overlay-toggle:disabled { border-color: var(--line); color: var(--muted); cursor: not-allowed; opacity: .45; }
+.model-grid { display: grid; grid-template-columns: 1fr; margin-top: 29px; padding-top: 17px; border-top: 1px solid var(--line); }
 
 .topbar-meta, .study-title dt, .pk-metrics code, .pk-metrics dd, .dose-event label, .model-controls label, .request-preview, .source-tag, .status, .method-badge { font-family: var(--font-data); }
 .loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: 12px; background: #09100e; color: #77978d; font-family: var(--font-data); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
@@ -336,14 +335,12 @@ td:first-child { color: var(--ink); font-weight: 600; }
 @media (max-width: 1350px) {
   .chart-grid { grid-template-columns: 1fr 1fr; }
   .nca-card { grid-column: 1 / -1; }
-  .model-grid { grid-template-columns: 1fr 1fr; }
-  .model-panel { grid-column: 1 / -1; }
   .study-title { display: block; }
   .study-title dl { min-width: 0; margin-top: 18px; }
 }
 @media (max-width: 900px) {
-  .chart-grid, .model-grid { grid-template-columns: 1fr; }
-  .nca-card, .model-panel { grid-column: auto; }
+  .chart-grid { grid-template-columns: 1fr; }
+  .nca-card { grid-column: auto; }
 }
 @media (max-width: 760px) {
   .topbar { min-height: 69px; padding: 0 13px; }
@@ -357,4 +354,6 @@ td:first-child { color: var(--ink); font-weight: 600; }
   .dose-event { grid-template-columns: 25px 1fr 1fr 24px; }
   .dose-event .unit { display: none; }
   .protocol-actions { flex-wrap: wrap; }
+  .toolbar { align-items: flex-start; gap: 10px; }
+  .toolbar-controls { align-items: flex-end; flex-direction: column-reverse; }
 }

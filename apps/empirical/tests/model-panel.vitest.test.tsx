@@ -53,15 +53,15 @@ afterEach(() => {
   mocks.runInference.mockReset();
 });
 
-test("uses conservative public inference defaults and limits", async () => {
+test("exposes only the conservative generated-individual control", async () => {
   render(<ModelPanel study={study} result={null} onResult={vi.fn()} />);
 
   const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
-  const steps = screen.getByLabelText("Integration steps") as HTMLInputElement;
   expect(draws.valueAsNumber).toBe(20);
   expect(draws.max).toBe("30");
-  expect(steps.valueAsNumber).toBe(8);
-  expect(steps.max).toBe("16");
+  expect(screen.queryByLabelText("Integrator")).toBeNull();
+  expect(screen.queryByLabelText("Integration steps")).toBeNull();
+  expect(screen.queryByLabelText("Checkpoint")).toBeNull();
 });
 
 test("intervention dose and time accept full decimal replacement and reach inference", async () => {
@@ -91,6 +91,7 @@ test("intervention dose and time accept full decimal replacement and reach infer
     { time: 0, amount: 10, unit: "mg", route: "oral" },
     { time: 2.3, amount: 40, unit: "mg", route: "oral" },
   ]);
+  expect(mocks.runInference.mock.calls[0][0].solver).toEqual({ method: "heun", steps: 8 });
   await waitFor(() => expect(onResult).toHaveBeenCalledWith(response));
 });
 

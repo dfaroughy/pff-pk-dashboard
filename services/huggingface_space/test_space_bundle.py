@@ -24,6 +24,19 @@ class SpaceSourceTests(unittest.TestCase):
         ast.parse((self.root / "app.py").read_text(encoding="utf-8"))
         ast.parse((self.root / "build_bundle.py").read_text(encoding="utf-8"))
 
+    def test_public_solver_is_fixed(self) -> None:
+        tree = ast.parse((self.root / "app.py").read_text(encoding="utf-8"))
+        assignment = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "PUBLIC_SOLVER"
+                for target in node.targets
+            )
+        )
+        self.assertEqual(ast.literal_eval(assignment.value), {"method": "heun", "steps": 8})
+
 
 if __name__ == "__main__":
     unittest.main()
