@@ -82,6 +82,13 @@ def finite(value: Any, field: str) -> float:
     return result
 
 
+def bounded_integer(value: Any, field: str, low: int, high: int) -> int:
+    numeric = finite(value, field)
+    if not numeric.is_integer() or not low <= numeric <= high:
+        raise ValueError(f"{field} must be a whole number between {low} and {high}")
+    return int(numeric)
+
+
 def route(value: Any) -> str:
     normalized = str(value).strip().lower()
     if normalized in {"oral", "po"}:
@@ -136,6 +143,43 @@ def build_cohort(study: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def target_dose_events(
+    raw_events: Any, cohort: dict[str, Any]
+) -> list[dict[str, float | str]]:
+    events = []
+    for event in raw_events or []:
+        if not isinstance(event, dict):
+            raise ValueError("each dose event must be an object")
+        if str(event.get("unit", "")).strip() != cohort["dose_units"].strip():
+            raise ValueError(
+                f"dose event unit must match the context unit {cohort['dose_units']!r}"
+            )
+        event_time = finite(event.get("time"), "dose-event time")
+        event_amount = finite(event.get("amount"), "dose-event amount")
+        event_duration = finite(event.get("duration", 0), "dose-event duration")
+        if event_time < 0:
+            raise ValueError("dose-event time must be at least zero")
+        if event_amount <= 0:
+            raise ValueError("dose-event amount must be greater than zero")
+        if event_duration < 0:
+            raise ValueError("dose-event duration must be at least zero")
+        if event_time + event_duration > cohort["horizon"]:
+            raise ValueError(
+                f"dose event must end within the {cohort['horizon']:.6g} "
+                f"{cohort['time_units']} observation horizon"
+            )
+        events.append({
+            "time": event_time,
+            "amount": event_amount,
+            "duration": event_duration,
+            "route": route(event.get("route", cohort["route"])),
+            "unit": cohort["dose_units"],
+        })
+    if not events:
+        raise ValueError("at least one target dose event is required")
+    return sorted(events, key=lambda event: float(event["time"]))
+
+
 class ModelRuntime:
     def __init__(self) -> None:
         self.config_path = Path(os.environ.get("PFF_CONFIG", DEFAULT_CONFIG)).resolve()
@@ -181,33 +225,15 @@ class ModelRuntime:
     def infer(self, request: dict[str, Any]) -> dict[str, Any]:
         loaded = self.load()
         cohort = build_cohort(request.get("study") or {})
-        n_draws = int(request.get("nDraws", 100))
-        if not 1 <= n_draws <= 500:
-            raise ValueError("nDraws must lie between 1 and 500")
+        n_draws = bounded_integer(request.get("nDraws", 100), "nDraws", 1, 500)
         solver = request.get("solver") or {}
         method = str(solver.get("method", "heun"))
-        steps = int(solver.get("steps", 8))
-        if method not in {"euler", "heun"} or not 1 <= steps <= 100:
-            raise ValueError("solver must be Euler/Heun with 1–100 steps")
-        batch_size = int(request.get("batchSize", 8))
-        if not 1 <= batch_size <= 32:
-            raise ValueError("batchSize must lie between 1 and 32")
+        steps = bounded_integer(solver.get("steps", 8), "solver steps", 1, 100)
+        if method not in {"euler", "heun"}:
+            raise ValueError("solver method must be Euler or Heun")
+        batch_size = bounded_integer(request.get("batchSize", 8), "batchSize", 1, 32)
 
-        target_events = []
-        for event in request.get("doseEvents") or []:
-            if str(event.get("unit")) != cohort["dose_units"]:
-                raise ValueError(
-                    f"dose event unit must match the context unit {cohort['dose_units']!r}"
-                )
-            target_events.append({
-                "time": finite(event.get("time"), "dose-event time"),
-                "amount": finite(event.get("amount"), "dose-event amount"),
-                "duration": finite(event.get("duration", 0), "dose-event duration"),
-                "route": route(event.get("route", cohort["route"])),
-            })
-        if not target_events:
-            raise ValueError("at least one target dose event is required")
-        target_events.sort(key=lambda event: event["time"])
+        target_events = target_dose_events(request.get("doseEvents"), cohort)
 
         cpu_batch, _, _ = empirical_cohort_batch(
             cohort,
@@ -216,7 +242,7 @@ class ModelRuntime:
         )
         cpu_batch = union_query_batch(cpu_batch)
         query_time = cpu_batch.target_time.numpy()[0, :, 0] * cohort["horizon"]
-        seed = int(request.get("seed", 161803))
+        seed = bounded_integer(request.get("seed", 161803), "seed", 0, 2**31 - 1)
         started = time.perf_counter()
         chunks = []
         for start in range(0, n_draws, batch_size):
@@ -240,7 +266,7 @@ class ModelRuntime:
             "checkpointId": self.checkpoint_path.stem,
             "request": {
                 "studyId": request.get("study", {}).get("id"),
-                "doseEvents": request.get("doseEvents"),
+                "doseEvents": target_events,
                 "nDraws": n_draws,
                 "solver": {"method": method, "steps": steps},
                 "seed": seed,

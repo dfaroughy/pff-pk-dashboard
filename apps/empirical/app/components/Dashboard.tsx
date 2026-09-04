@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { pkEstimates } from "../lib/pk";
 import { runInference, serviceStatus, type InferenceResponse, type ServiceStatus } from "../lib/model-api";
+import { contextDoseRatio, doseEventDraft, observedProtocol, studyHorizon, validateDoseProtocol, validateInteger, type DoseEventDraft } from "../lib/protocol";
 import { dashboardRuntimeConfig } from "../lib/runtime-config";
-import type { Corpus, DoseEvent, Study } from "../lib/types";
+import type { Corpus, Study } from "../lib/types";
 import { ModelTrajectoryChart, ModelVpcChart, TrajectoryChart, VpcChart } from "./StudyCharts";
 
 function format(value: number | null) {
@@ -18,7 +19,7 @@ function StudySelector({ studies, selected, onSelect }: { studies: Study[]; sele
   const [origin, setOrigin] = useState("All data");
   const [expandedDrug, setExpandedDrug] = useState<string | null>(selected.drug);
   const drugs = useMemo(() => [...new Set(studies.map((study) => study.drug))].sort(), [studies]);
-  const visibleDrugs = drugs.filter((drug) => drug.includes(query.toLowerCase()) && (origin === "All data" || studies.some((study) => study.drug === drug && study.origin === origin)));
+  const visibleDrugs = drugs.filter((drug) => drug.toLowerCase().includes(query.toLowerCase()) && (origin === "All data" || studies.some((study) => study.drug === drug && study.origin === origin)));
   return <aside className="study-browser">
     <div className="browser-header">
       <p className="eyebrow">Study catalogue</p>
@@ -41,23 +42,33 @@ function StudySelector({ studies, selected, onSelect }: { studies: Study[]; sele
           </button>)}</div>}
         </div>;
       })}
+      {!visibleDrugs.length && <p className="empty-catalogue">No matching analytes.</p>}
     </div>
   </aside>;
 }
 
-function ModelPanel({ study, result, onResult }: { study: Study; result: InferenceResponse | null; onResult: (result: InferenceResponse | null) => void }) {
+export function ModelPanel({ study, result, onResult }: { study: Study; result: InferenceResponse | null; onResult: (result: InferenceResponse | null) => void }) {
   const apiRoot = dashboardRuntimeConfig().apiRoot;
   const protocolUnit = study.dose === null ? "relative exposure" : study.doseUnit;
-  const initial = study.doseEvents?.length ? study.doseEvents : [{ time: 0, amount: study.dose ?? 1, unit: protocolUnit, route: study.route }];
-  const [events, setEvents] = useState<DoseEvent[]>(initial);
-  const [draws, setDraws] = useState(100);
+  const horizon = studyHorizon(study);
+  const referenceDose = study.dose ?? 1;
+  const abortRequest = useRef<AbortController | null>(null);
+  const initialProtocol = observedProtocol(study, protocolUnit);
+  const resetDrafts = () => initialProtocol.map((event, index) => doseEventDraft(event, `observed-${index}`));
+  const [events, setEvents] = useState<DoseEventDraft[]>(resetDrafts);
+  const [nextEventId, setNextEventId] = useState(initialProtocol.length);
+  const [draws, setDraws] = useState("100");
   const [method, setMethod] = useState<"heun" | "euler">("heun");
-  const [steps, setSteps] = useState(8);
+  const [steps, setSteps] = useState("8");
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const eligible = study.subjects.length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
+  const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
+  const drawsError = validateInteger(draws, 1, 500);
+  const stepsError = validateInteger(steps, 1, 100);
+  const controlsValid = protocol.valid && !drawsError && !stepsError;
   useEffect(() => {
     let active = true;
     const refresh = () => serviceStatus()
@@ -67,55 +78,100 @@ function ModelPanel({ study, result, onResult }: { study: Study; result: Inferen
     const timer = window.setInterval(refresh, 3000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
-  const change = (index: number, field: "time" | "amount", value: number) => setEvents(events.map((event, eventIndex) => eventIndex === index ? { ...event, [field]: value } : event));
+  useEffect(() => () => abortRequest.current?.abort(), []);
+  const invalidate = () => {
+    abortRequest.current?.abort();
+    abortRequest.current = null;
+    setRunning(false);
+    setError("");
+    onResult(null);
+  };
+  const change = (id: string, field: "time" | "amount", value: string) => {
+    setEvents((current) => current.map((event) => event.id === id ? { ...event, [field]: value } : event));
+    invalidate();
+  };
+  const remove = (id: string) => {
+    setEvents((current) => current.filter((event) => event.id !== id));
+    invalidate();
+  };
+  const addIntervention = () => {
+    const event = doseEventDraft({ time: 0.7 * horizon, amount: referenceDose, unit: protocolUnit, route: study.route }, `added-${nextEventId}`);
+    setNextEventId((current) => current + 1);
+    setEvents((current) => [...current, event]);
+    invalidate();
+  };
+  const restoreObservedProtocol = () => {
+    setEvents(resetDrafts());
+    invalidate();
+  };
   const submit = async () => {
+    if (!controlsValid) {
+      setError("Correct the highlighted protocol settings before running inference.");
+      return;
+    }
+    abortRequest.current?.abort();
+    const controller = new AbortController();
+    abortRequest.current = controller;
     setRunning(true); setError(""); onResult(null);
     try {
-      onResult(await runInference({
+      const nextResult = await runInference({
         study: {
           id: study.id, drug: study.drug, study: study.study, source: study.source,
           route: study.route, dose: study.dose, doseUnit: protocolUnit,
           concentrationUnit: study.concentrationUnit, timeUnit: study.timeUnit,
           subjects: study.subjects,
         },
-        doseEvents: events,
-        nDraws: draws,
+        doseEvents: protocol.events,
+        nDraws: Number(draws),
         batchSize: 8,
-        solver: { method, steps },
+        solver: { method, steps: Number(steps) },
         seed: 161803,
-      }));
+      }, controller.signal);
+      if (!controller.signal.aborted) onResult(nextResult);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "PFF inference failed");
-    } finally { setRunning(false); }
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "PFF inference failed");
+    } finally {
+      if (abortRequest.current === controller) {
+        abortRequest.current = null;
+        setRunning(false);
+      }
+    }
   };
   return <section className="model-panel card">
     <div className="section-heading">
       <div><p className="eyebrow">Counterfactual protocol</p><h2>PFF zero-shot model</h2></div>
-      <span className={status?.ready ? "status connected" : "status"}>{status?.ready ? `CPU · ${status.loaded ? "model loaded" : "ready"}` : "Service offline"}</span>
+      <span className={status?.ready ? "status connected" : "status"}>{status?.ready ? `CPU · ${status.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : "Service offline"}</span>
     </div>
     <p className="muted">The browser sends physical observations and this dose schedule to the local service. PyTorch performs preprocessing and PFF inference on your CPU.</p>
+    <p className="protocol-domain">Prediction window: 0–{format(horizon)} {study.timeUnit}. Dose times use {study.timeUnit}; doses use {protocolUnit}.</p>
     <div className="event-list">
-      {events.map((event, index) => <div className="dose-event" key={`${event.time}-${index}`}>
-        <span className="event-index">{index + 1}</span>
-        <label>Time <input type="number" min="0" step="0.01" value={event.time} onChange={(e) => change(index, "time", Number(e.target.value))} /></label>
-        <label>Dose <input type="number" min="0" step="0.01" value={event.amount} onChange={(e) => change(index, "amount", Number(e.target.value))} /></label>
-        <span className="unit">{event.unit}</span>
-        <button className="icon-button" aria-label={`Remove dose ${index + 1}`} onClick={() => setEvents(events.filter((_, eventIndex) => eventIndex !== index))}>×</button>
-      </div>)}
+      {events.map((event, index) => {
+        const eventErrors = protocol.errors[event.id] ?? {};
+        const ratio = contextDoseRatio(event.amount, referenceDose);
+        return <div className="dose-event" key={event.id}>
+          <span className="event-index">{index + 1}</span>
+          <label className={eventErrors.time ? "invalid" : ""}>Time ({study.timeUnit}) <input aria-label={`Dose ${index + 1} time in ${study.timeUnit}`} aria-invalid={Boolean(eventErrors.time)} type="number" min="0" max={horizon} step="any" value={event.time} onChange={(e) => change(event.id, "time", e.target.value)} />{eventErrors.time && <small className="field-error">{eventErrors.time}</small>}</label>
+          <label className={eventErrors.amount ? "invalid" : ""}>Dose ({event.unit}) <input aria-label={`Dose ${index + 1} amount in ${event.unit}`} aria-invalid={Boolean(eventErrors.amount)} type="number" min="0" step="any" value={event.amount} onChange={(e) => change(event.id, "amount", e.target.value)} />{eventErrors.amount && <small className="field-error">{eventErrors.amount}</small>}</label>
+          <span className="unit">{ratio ?? event.unit}</span>
+          <button type="button" className="icon-button" aria-label={`Remove dose ${index + 1}`} onClick={() => remove(event.id)}>×</button>
+        </div>;
+      })}
+      {!events.length && <p className="empty-protocol">Add at least one dose event.</p>}
     </div>
-    <button className="secondary-button" onClick={() => setEvents([...events, { time: 0.7 * Math.max(...study.subjects.flatMap((subject) => subject.points.map(([time]) => time)), 1), amount: study.dose ?? 1, unit: protocolUnit, route: study.route }])}>+ Add intervention</button>
+    <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div>
     <div className="model-controls">
-      <label>Generated individuals <input type="number" min="1" max="500" value={draws} onChange={(event) => setDraws(Number(event.target.value))} /></label>
-      <label>Integrator <select value={method} onChange={(event) => setMethod(event.target.value as "heun" | "euler")}><option value="heun">Heun</option><option value="euler">Euler</option></select></label>
-      <label>Integration steps <input type="number" min="1" max="100" value={steps} onChange={(event) => setSteps(Number(event.target.value))} /></label>
+      <label className={drawsError ? "invalid" : ""}>Generated individuals <input aria-invalid={Boolean(drawsError)} type="number" min="1" max="500" step="1" value={draws} onChange={(event) => { setDraws(event.target.value); invalidate(); }} />{drawsError && <small className="field-error">{drawsError}</small>}</label>
+      <label>Integrator <select value={method} onChange={(event) => { setMethod(event.target.value as "heun" | "euler"); invalidate(); }}><option value="heun">Heun</option><option value="euler">Euler</option></select></label>
+      <label className={stepsError ? "invalid" : ""}>Integration steps <input aria-invalid={Boolean(stepsError)} type="number" min="1" max="100" step="1" value={steps} onChange={(event) => { setSteps(event.target.value); invalidate(); }} />{stepsError && <small className="field-error">{stepsError}</small>}</label>
       <label>Checkpoint <input value={status?.checkpointId ?? "Local service"} readOnly /></label>
     </div>
     {!eligible && <p className="model-warning">Interactive PFF inference requires at least two individual trajectories.</p>}
+    {!status?.ready && <p className="model-warning">Start the local inference service with <code>npm run inference</code>. The model controls remain disabled until its checkpoint is available.</p>}
     {eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
     {eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
-    <button className="primary-button" disabled={!status?.ready || !eligible || running} onClick={submit}>{running ? "Running PyTorch inference…" : "Run zero-shot inference"}</button>
-    <code className="request-preview">POST {apiRoot}/inference · {events.length} dose event{events.length === 1 ? "" : "s"}</code>
+    <button type="button" className="primary-button" disabled={!status?.ready || !eligible || !controlsValid || running} onClick={submit}>{running ? "Running PyTorch inference…" : "Run zero-shot inference"}</button>
+    <code className="request-preview">POST {apiRoot}/inference · {events.length} dose event{events.length === 1 ? "" : "s"} · {method} × {steps || "—"}</code>
     {result && <p className="completed-request">Artifact <code>{result.inferenceId}</code><br />{result.generatedConcentration.length} draws · {result.provenance.runtimeSeconds.toFixed(1)} s · {result.provenance.normalization}</p>}
   </section>;
 }

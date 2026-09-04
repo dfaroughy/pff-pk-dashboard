@@ -40,11 +40,12 @@ export async function serviceStatus(): Promise<ServiceStatus> {
   return response.json() as Promise<ServiceStatus>;
 }
 
-export async function runInference(request: InferenceRequest): Promise<InferenceResponse> {
+export async function runInference(request: InferenceRequest, signal?: AbortSignal): Promise<InferenceResponse> {
   const response = await fetch(`${dashboardRuntimeConfig().apiRoot}/inference`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(request),
+    signal,
   });
   const payload = await response.json() as InferenceResponse | { error: string };
   if (!response.ok) throw new Error("error" in payload ? payload.error : `PFF inference failed (${response.status})`);

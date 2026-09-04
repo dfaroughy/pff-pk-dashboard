@@ -11,13 +11,22 @@ const MARGIN = { left: 62, right: 22, top: 22, bottom: 48 };
 
 function bounds(series: Point[][], logY: boolean) {
   const points = series.flat().filter(([, y]) => y > 0 && Number.isFinite(y));
+  if (!points.length) return { xMin: 0, xMax: 1, yMin: logY ? -1 : 0, yMax: 1 };
   const xValues = points.map(([x]) => x);
   const yValues = points.map(([, y]) => logY ? Math.log10(y) : y);
   const xMax = Math.max(...xValues, 1);
-  let yMin = Math.min(...yValues, 0);
-  let yMax = Math.max(...yValues, 1);
-  if (!logY) yMin = 0;
-  if (yMin === yMax) yMax += 1;
+  let yMin = logY ? Math.min(...yValues) : 0;
+  let yMax = Math.max(...yValues);
+  if (logY) {
+    if (yMin === yMax) { yMin -= 0.5; yMax += 0.5; }
+    else {
+      const padding = 0.06 * (yMax - yMin);
+      yMin -= padding;
+      yMax += padding;
+    }
+  } else {
+    yMax = Math.max(yMax * 1.06, 1e-12);
+  }
   return { xMin: 0, xMax, yMin, yMax };
 }
 
@@ -50,7 +59,7 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [] }: 
       const raw = logY ? 10 ** tick : tick;
       return <g key={`y-${tick}`}>
         <line className="gridline" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(raw)} y2={y(raw)} />
-        <text className="tick" x={MARGIN.left - 10} y={y(raw) + 4} textAnchor="end">{logY ? `10${Math.round(tick) >= 0 ? "⁺" : "⁻"}${Math.abs(Math.round(tick))}` : raw.toPrecision(3)}</text>
+        <text className="tick" x={MARGIN.left - 10} y={y(raw) + 4} textAnchor="end">{logY ? raw.toExponential(1).replace("e+", "e") : raw.toPrecision(3)}</text>
       </g>;
     })}
     <g clipPath={`url(#${clipId})`}>
@@ -126,10 +135,10 @@ function bootstrapBand(values: number[], probability: number, seed: number) {
 }
 
 export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: InferenceResponse; study: Study; logY: boolean; showEmpirical: boolean }) {
-  const model = result.queryTime.map((time, index) => {
+  const model = useMemo(() => result.queryTime.map((time, index) => {
     const values = result.generatedConcentration.map((sample) => sample[index]).filter(Number.isFinite);
     return { time, low: bootstrapBand(values, 0.05, 11_003 + index), median: bootstrapBand(values, 0.5, 23_009 + index), high: bootstrapBand(values, 0.95, 37_019 + index) };
-  });
+  }), [result]);
   const point = (key: "low" | "median" | "high", bound: "lower" | "center" | "upper") => model.map((entry) => [entry.time, entry[key][bound]] as Point);
   const empiricalVpc = showEmpirical ? observedVpc(study).filter((entry) => entry.n >= 2) : [];
   const empiricalSeries = empiricalVpc.length ? [
