@@ -287,6 +287,31 @@ class ModelRuntime:
 RUNTIME = ModelRuntime()
 
 
+def cached_inference(request: dict[str, Any]) -> dict[str, Any]:
+    """Run one validated request and persist the immutable response by content hash."""
+    if not isinstance(request, dict):
+        raise ValueError("inference request must be a JSON object")
+    RUNTIME.load()
+    cache_key = {
+        "schemaVersion": 1,
+        "request": request,
+        "checkpointSha256": RUNTIME.checkpoint_sha256,
+        "configSha256": hashlib.sha256(RUNTIME.config_path.read_bytes()).hexdigest(),
+    }
+    canonical = json.dumps(cache_key, sort_keys=True, separators=(",", ":")).encode()
+    inference_id = hashlib.sha256(canonical).hexdigest()[:20]
+    destination = CACHE_ROOT / f"{inference_id}.json"
+    if destination.exists():
+        return json.loads(destination.read_text(encoding="utf-8"))
+    result = RUNTIME.infer(request)
+    result["inferenceId"] = inference_id
+    CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(".tmp")
+    temporary.write_text(json.dumps(result, separators=(",", ":")), encoding="utf-8")
+    temporary.replace(destination)
+    return result
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "PFFDashboard/1.0"
 
@@ -328,26 +353,7 @@ class Handler(BaseHTTPRequestHandler):
             if length <= 0 or length > 10_000_000:
                 raise ValueError("invalid request size")
             request = json.loads(self.rfile.read(length))
-            RUNTIME.load()
-            cache_key = {
-                "schemaVersion": 1,
-                "request": request,
-                "checkpointSha256": RUNTIME.checkpoint_sha256,
-                "configSha256": hashlib.sha256(RUNTIME.config_path.read_bytes()).hexdigest(),
-            }
-            canonical = json.dumps(cache_key, sort_keys=True, separators=(",", ":")).encode()
-            inference_id = hashlib.sha256(canonical).hexdigest()[:20]
-            destination = CACHE_ROOT / f"{inference_id}.json"
-            if destination.exists():
-                self._send(200, json.loads(destination.read_text(encoding="utf-8")))
-                return
-            result = RUNTIME.infer(request)
-            result["inferenceId"] = inference_id
-            CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-            temporary = destination.with_suffix(".tmp")
-            temporary.write_text(json.dumps(result, separators=(",", ":")), encoding="utf-8")
-            temporary.replace(destination)
-            self._send(200, result)
+            self._send(200, cached_inference(request))
         except (ValueError, KeyError, TypeError, FileNotFoundError) as error:
             self._send(400, {"error": str(error)})
         except Exception as error:  # keep the local service alive and report cleanly

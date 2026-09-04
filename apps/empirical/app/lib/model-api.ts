@@ -1,3 +1,4 @@
+import { Client } from "@gradio/client";
 import type { DoseEvent, Study } from "./types";
 import { dashboardRuntimeConfig } from "./runtime-config";
 
@@ -34,14 +35,68 @@ export type ServiceStatus = {
   checkpointId: string;
 };
 
+const hostedClients = new Map<string, Promise<Client>>();
+
+function isLocalApi(apiRoot: string) {
+  try {
+    const hostname = new URL(apiRoot).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+function hostedClient(apiRoot: string) {
+  let pending = hostedClients.get(apiRoot);
+  if (!pending) {
+    pending = Client.connect(apiRoot).catch((error) => {
+      hostedClients.delete(apiRoot);
+      throw error;
+    });
+    hostedClients.set(apiRoot, pending);
+  }
+  return pending;
+}
+
+function gradioOutput<T>(data: unknown): T {
+  const value = Array.isArray(data) ? data[0] : data;
+  if (typeof value === "string") return JSON.parse(value) as T;
+  return value as T;
+}
+
+async function hostedPrediction<T>(apiRoot: string, endpoint: string, payload: Record<string, unknown>) {
+  const client = await hostedClient(apiRoot);
+  const result = await client.predict<unknown>(endpoint, payload);
+  return gradioOutput<T>(result.data);
+}
+
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new DOMException("Inference cancelled", "AbortError"));
+  return new Promise<T>((resolve, reject) => {
+    const cancel = () => reject(new DOMException("Inference cancelled", "AbortError"));
+    signal.addEventListener("abort", cancel, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", cancel));
+  });
+}
+
 export async function serviceStatus(): Promise<ServiceStatus> {
-  const response = await fetch(`${dashboardRuntimeConfig().apiRoot}/health`);
+  const { apiRoot } = dashboardRuntimeConfig();
+  if (!isLocalApi(apiRoot)) return hostedPrediction<ServiceStatus>(apiRoot, "/health", {});
+  const response = await fetch(`${apiRoot}/health`);
   if (!response.ok) throw new Error("PFF service is unavailable");
   return response.json() as Promise<ServiceStatus>;
 }
 
 export async function runInference(request: InferenceRequest, signal?: AbortSignal): Promise<InferenceResponse> {
-  const response = await fetch(`${dashboardRuntimeConfig().apiRoot}/inference`, {
+  const { apiRoot } = dashboardRuntimeConfig();
+  if (!isLocalApi(apiRoot)) {
+    return abortable(
+      hostedPrediction<InferenceResponse>(apiRoot, "/inference", { payload: request }),
+      signal,
+    );
+  }
+  const response = await fetch(`${apiRoot}/inference`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(request),

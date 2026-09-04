@@ -52,6 +52,11 @@ window.PFF_DASHBOARD_CONFIG = {
 };
 ```
 
+The GitHub Pages build selects the public Gradio service automatically. Visitors
+therefore need only a browser: the private checkpoint is loaded server-side and
+is neither bundled with the site nor returned by the API. Local builds retain
+the loopback service shown above.
+
 For local development with the PyTorch service:
 
 ```bash
@@ -83,9 +88,9 @@ npm run build
 npm test
 ```
 
-PFF inference runs exclusively in the local Python/PyTorch process. The browser
-sends physical observations and dose events, receives physical concentration
-samples, and draws the result. Requests are cached under `.cache/inference` at
-the repository root
-using the request, checkpoint and configuration fingerprints. See
+PFF inference runs in Python/PyTorch, either through the local process or the
+public Hugging Face Gradio service. The browser sends physical observations and
+dose events, receives physical concentration samples, and draws the result.
+Requests are cached using the request, checkpoint and configuration
+fingerprints. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full contract.

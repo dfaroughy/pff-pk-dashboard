@@ -49,6 +49,7 @@ function StudySelector({ studies, selected, onSelect }: { studies: Study[]; sele
 
 export function ModelPanel({ study, result, onResult }: { study: Study; result: InferenceResponse | null; onResult: (result: InferenceResponse | null) => void }) {
   const apiRoot = dashboardRuntimeConfig().apiRoot;
+  const hosted = !apiRoot.includes("127.0.0.1") && !apiRoot.includes("localhost");
   const protocolUnit = study.dose === null ? "relative exposure" : study.doseUnit;
   const horizon = studyHorizon(study);
   const referenceDose = study.dose ?? 1;
@@ -140,9 +141,9 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
   return <section className="model-panel card">
     <div className="section-heading">
       <div><p className="eyebrow">Counterfactual protocol</p><h2>PFF zero-shot model</h2></div>
-      <span className={status?.ready ? "status connected" : "status"}>{status?.ready ? `CPU · ${status.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : "Service offline"}</span>
+      <span className={status?.ready ? "status connected" : "status"}>{status?.ready ? `CPU · ${status.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span>
     </div>
-    <p className="muted">The browser sends physical observations and this dose schedule to the local service. PyTorch performs preprocessing and PFF inference on your CPU.</p>
+    <p className="muted">The browser sends physical observations and this dose schedule to the inference service. PyTorch performs preprocessing and PFF inference server-side.</p>
     <p className="protocol-domain">Prediction window: 0–{format(horizon)} {study.timeUnit}. Dose times use {study.timeUnit}; doses use {protocolUnit}.</p>
     <div className="event-list">
       {events.map((event, index) => {
@@ -166,12 +167,12 @@ export function ModelPanel({ study, result, onResult }: { study: Study; result: 
       <label>Checkpoint <input value={status?.checkpointId ?? "Local service"} readOnly /></label>
     </div>
     {!eligible && <p className="model-warning">Interactive PFF inference requires at least two individual trajectories.</p>}
-    {!status?.ready && <p className="model-warning">Start the local inference service with <code>npm run inference</code>. The model controls remain disabled until its checkpoint is available.</p>}
+    {!status?.ready && <p className="model-warning">{hosted ? "The free hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
     {eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
     {eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
     <button type="button" className="primary-button" disabled={!status?.ready || !eligible || !controlsValid || running} onClick={submit}>{running ? "Running PyTorch inference…" : "Run zero-shot inference"}</button>
-    <code className="request-preview">POST {apiRoot}/inference · {events.length} dose event{events.length === 1 ? "" : "s"} · {method} × {steps || "—"}</code>
+    <code className="request-preview">PFF API · {events.length} dose event{events.length === 1 ? "" : "s"} · {method} × {steps || "—"}</code>
     {result && <p className="completed-request">Artifact <code>{result.inferenceId}</code><br />{result.generatedConcentration.length} draws · {result.provenance.runtimeSeconds.toFixed(1)} s · {result.provenance.normalization}</p>}
   </section>;
 }
