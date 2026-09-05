@@ -125,7 +125,7 @@ function StudySelector({ studies, selected, onSelect, onUpload }: {
   }, [query, studies]);
   return <aside className="study-browser">
     <div className="browser-header">
-      <button className="custom-dataset-button" type="button" onClick={onUpload}>Custom dataset</button>
+      <button className="custom-dataset-button" type="button" onClick={onUpload}>Upload data</button>
       <input aria-label="Search drugs" placeholder="Search" value={query} onChange={(event) => setQuery(event.target.value)} />
     </div>
     <div className="drug-list">
