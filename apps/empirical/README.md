@@ -78,6 +78,26 @@ origin to `PFF_ALLOWED_ORIGINS`, for example
 The data build converts Lenuzza concentrations from g/L to ng/mL and doses from
 g to mg, matching the validated adapter in `pff_pk.inference.empirical`.
 
+## Custom datasets
+
+The browser imports conventional NONMEM/nlmixr2 event tables and Monolix-style
+long tables from comma-, tab-, semicolon-, or whitespace-delimited files. The
+minimum columns are subject (`ID`), time (`TIME`), and concentration (`DV` or
+`Y`). Recognized event fields include `AMT`/`AMOUNT`, `EVID`, `MDV`, `RATE`,
+`DUR`/`TINF`, `ADDL`, `II`, `SS`, and `CENS`. Optional metadata fields include
+`ROUTE`, `DRUG`, `TIME_UNIT`, `DV_UNIT`, `DOSE_UNIT`, and `MATRIX`. If route is
+stored only in the NONMEM control stream or Monolix project, the user assigns
+oral or intravenous administration in the import dialog; the data file itself
+does not need to be edited. All individuals in one import must share one route,
+PK analyte, and dose regimen. Reset/steady-state events and multi-outcome
+`DVID`/`YTYPE` tables are rejected rather than interpreted silently. A working
+template is available at `public/data/pk-upload-template.csv`.
+
+Imported observations are held only in browser memory. The plots are computed
+client-side. Selecting a Pythia model sends the parsed study values—not the
+source file—to the inference API under the same validated limits as built-in
+studies.
+
 ## Scientific interpretation
 
 - An **observed VPC** is only shown when individual records are available. Its

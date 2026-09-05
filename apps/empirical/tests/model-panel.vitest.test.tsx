@@ -19,7 +19,7 @@ vi.mock("../app/lib/model-api", () => ({
   }),
 }));
 
-const { ModelPanel, firstParagraph, studyLabel } = await import("../app/components/Dashboard");
+const { DatasetUploadDialog, ModelPanel, firstParagraph, studyLabel } = await import("../app/components/Dashboard");
 const { ModelVpcChart } = await import("../app/components/StudyCharts");
 
 const study: Study = {
@@ -85,6 +85,54 @@ test("Wikipedia extracts are reduced to the first paragraph", () => {
   expect(firstParagraph("First paragraph.\n\nSecond paragraph.")).toBe("First paragraph.");
 });
 
+test("imports a custom PK dataset through the file picker", async () => {
+  const user = userEvent.setup();
+  const onStudy = vi.fn();
+  render(<DatasetUploadDialog onClose={vi.fn()} onStudy={onStudy} />);
+  const dataset = `ID,TIME,DV,ROUTE,DRUG
+1,0.5,10,oral,test compound
+1,2,5,oral,test compound
+2,0.5,12,oral,test compound
+2,2,4,oral,test compound`;
+  await user.upload(
+    screen.getByLabelText("Choose PK dataset file"),
+    new File([dataset], "test.csv", { type: "text/csv" }),
+  );
+
+  await waitFor(() => expect(onStudy).toHaveBeenCalledOnce());
+  expect(onStudy.mock.calls[0][0].drug).toBe("test compound");
+  expect(onStudy.mock.calls[0][0].subjects).toHaveLength(2);
+});
+
+test("reports invalid custom PK datasets without closing the dialog", async () => {
+  const user = userEvent.setup();
+  const onStudy = vi.fn();
+  render(<DatasetUploadDialog onClose={vi.fn()} onStudy={onStudy} />);
+  await user.upload(
+    screen.getByLabelText("Choose PK dataset file"),
+    new File(["ID,TIME,ROUTE\n1,1,oral"], "invalid.csv", { type: "text/csv" }),
+  );
+
+  expect((await screen.findByRole("alert")).textContent).toContain("Missing required column: DV");
+  expect(onStudy).not.toHaveBeenCalled();
+});
+
+test("imports a standard event table after route metadata is selected", async () => {
+  const user = userEvent.setup();
+  const onStudy = vi.fn();
+  render(<DatasetUploadDialog onClose={vi.fn()} onStudy={onStudy} />);
+  const dataset = "ID TIME Y\n1 0.5 10\n1 2 5\n2 0.5 12\n2 2 4";
+  await user.upload(
+    screen.getByLabelText("Choose PK dataset file"),
+    new File([dataset], "standard.dta", { type: "text/plain" }),
+  );
+
+  expect((await screen.findByRole("alert")).textContent).toContain("Administration route is not encoded");
+  await user.selectOptions(screen.getByLabelText("Administration route"), "oral");
+  await waitFor(() => expect(onStudy).toHaveBeenCalledOnce());
+  expect(onStudy.mock.calls[0][0].route).toBe("oral");
+});
+
 afterEach(() => {
   cleanup();
   mocks.runInference.mockReset();
@@ -101,7 +149,7 @@ test("exposes only conservative public inference controls", async () => {
   expect(screen.queryByLabelText("Checkpoint")).toBeNull();
   expect((screen.getByLabelText("Random seed") as HTMLInputElement).valueAsNumber).toBe(43);
   expect(screen.queryByRole("button", { name: "Resample" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Pythia" }).getAttribute("aria-pressed")).toBe("true");
+  expect((screen.getByLabelText("Models") as HTMLSelectElement).value).toBe("pythia");
 });
 
 test("renders the server-side Pharmpy VPC summary", () => {
@@ -125,11 +173,13 @@ test("Pythia is generation-only and sends the baseline protocol", async () => {
 
   expect(screen.queryByRole("button", { name: "+ Add intervention" })).toBeNull();
   expect(screen.queryByLabelText("Dose 1 amount in mg")).toBeNull();
-  const runButton = screen.getByRole("button", { name: "Run Pythia" });
+  const runButton = screen.getByRole("button", { name: "Run zero-shot inference" });
+  expect(screen.getByRole("progressbar", { name: "Inference progress" }).getAttribute("aria-valuenow")).toBe("0");
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   await user.click(runButton);
 
   await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.getByRole("progressbar", { name: "Inference progress" }).getAttribute("aria-valuenow")).toBe("100"));
   expect(mocks.runInference.mock.calls[0][0].seed).toBe(43);
   expect(mocks.runInference.mock.calls[0][0].modelId).toBe("pythia");
   expect(mocks.runInference.mock.calls[0][0].doseEvents).toEqual([
@@ -145,7 +195,7 @@ test("the user can select a reproducible inference seed", async () => {
   const seed = screen.getByLabelText("Random seed");
   await user.clear(seed);
   await user.type(seed, "1729");
-  const runButton = screen.getByRole("button", { name: "Run Pythia" });
+  const runButton = screen.getByRole("button", { name: "Run zero-shot inference" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   await user.click(runButton);
 
@@ -159,8 +209,8 @@ test("intervention dose and time accept full decimal replacement and reach infer
   mocks.runInference.mockResolvedValue(response);
   render(<ModelPanel study={study} onResult={onResult} />);
 
-  await user.click(screen.getByRole("button", { name: "Pythia-Dose" }));
-  const runButton = await screen.findByRole("button", { name: "Run Pythia-Dose" });
+  await user.selectOptions(screen.getByLabelText("Models"), "pythia_dose");
+  const runButton = await screen.findByRole("button", { name: "Run zero-shot inference" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   expect((screen.getByLabelText("Dose 1 time in h") as HTMLInputElement).disabled).toBe(true);
   expect((screen.getByRole("button", { name: "Remove dose 1" }) as HTMLButtonElement).disabled).toBe(true);
@@ -191,8 +241,8 @@ test("intervention dose and time accept full decimal replacement and reach infer
 test("invalid transient values disable inference instead of becoming zero", async () => {
   const user = userEvent.setup();
   render(<ModelPanel study={study} onResult={vi.fn()} />);
-  await user.click(screen.getByRole("button", { name: "Pythia-Dose" }));
-  const runButton = await screen.findByRole("button", { name: "Run Pythia-Dose" });
+  await user.selectOptions(screen.getByLabelText("Models"), "pythia_dose");
+  const runButton = await screen.findByRole("button", { name: "Run zero-shot inference" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
 
   await user.clear(screen.getByLabelText("Dose 1 amount in mg"));
@@ -208,8 +258,8 @@ test("editing a protocol aborts and discards an in-flight result", async () => {
   mocks.runInference.mockReturnValue(new Promise<InferenceResponse>((resolve) => { resolveInference = resolve; }));
   render(<ModelPanel study={study} onResult={onResult} />);
 
-  await user.click(screen.getByRole("button", { name: "Pythia-Dose" }));
-  const runButton = await screen.findByRole("button", { name: "Run Pythia-Dose" });
+  await user.selectOptions(screen.getByLabelText("Models"), "pythia_dose");
+  const runButton = await screen.findByRole("button", { name: "Run zero-shot inference" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   await user.click(runButton);
   await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
@@ -219,7 +269,7 @@ test("editing a protocol aborts and discards an in-flight result", async () => {
   await user.type(amount, "20");
   resolveInference(response);
 
-  await waitFor(() => expect(screen.getByRole("button", { name: "Run Pythia-Dose" })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("button", { name: "Run zero-shot inference" })).toBeTruthy());
   expect(onResult).not.toHaveBeenCalledWith(response);
   expect(onResult).toHaveBeenCalledWith(null);
 });

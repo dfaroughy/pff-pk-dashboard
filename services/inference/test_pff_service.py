@@ -7,9 +7,11 @@ import numpy as np
 from services.inference.pff_service import (
     DEFAULT_FLOW_STEPS,
     DEFAULT_GENERATED_INDIVIDUALS,
+    MAX_CONTEXT_INDIVIDUALS,
     MAX_FLOW_STEPS,
     MAX_GENERATED_INDIVIDUALS,
     bounded_integer,
+    build_cohort,
     generation_only_protocol,
     requested_model,
     target_dose_events,
@@ -41,6 +43,14 @@ class RequestValidationTests(unittest.TestCase):
             bounded_integer(31, "nDraws", 1, MAX_GENERATED_INDIVIDUALS)
         with self.assertRaisesRegex(ValueError, "between 1 and 16"):
             bounded_integer(17, "solver steps", 1, MAX_FLOW_STEPS)
+
+    def test_context_payload_rejects_excessive_individuals(self) -> None:
+        subjects = [
+            {"id": str(index), "points": [[0.5, 1.0], [1.0, 0.5]]}
+            for index in range(MAX_CONTEXT_INDIVIDUALS + 1)
+        ]
+        with self.assertRaisesRegex(ValueError, "at most 128 individuals"):
+            build_cohort({"subjects": subjects, "route": "oral"})
 
     def test_events_are_validated_and_sorted(self) -> None:
         events = target_dose_events(

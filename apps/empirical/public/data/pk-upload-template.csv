@@ -1,0 +1,9 @@
+ID,TIME,DV,AMT,EVID,MDV,DRUG,ROUTE,TIME_UNIT,DV_UNIT,DOSE_UNIT,MATRIX
+1,0,,100,1,1,example_drug,oral,h,ng/mL,mg,plasma
+1,0.5,820,,0,0,example_drug,oral,h,ng/mL,mg,plasma
+1,2,510,,0,0,example_drug,oral,h,ng/mL,mg,plasma
+1,8,145,,0,0,example_drug,oral,h,ng/mL,mg,plasma
+2,0,,100,1,1,example_drug,oral,h,ng/mL,mg,plasma
+2,0.5,910,,0,0,example_drug,oral,h,ng/mL,mg,plasma
+2,2,470,,0,0,example_drug,oral,h,ng/mL,mg,plasma
+2,8,120,,0,0,example_drug,oral,h,ng/mL,mg,plasma

@@ -31,3 +31,8 @@ Public deployment requirements:
 - restrict inputs, draws and integration steps;
 - serialize accelerator access and cache content-addressed responses; and
 - return checkpoint, configuration and solver fingerprints with every result.
+
+The public request boundary accepts at most 128 context individuals, 8,192
+observations, and 1,024 distinct observation times. These limits cover the
+built-in catalogue while preventing uploaded or hand-crafted payloads from
+creating unbounded CPU inference work.

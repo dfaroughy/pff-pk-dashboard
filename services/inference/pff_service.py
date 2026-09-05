@@ -63,6 +63,9 @@ DEFAULT_GENERATED_INDIVIDUALS = 20
 MAX_GENERATED_INDIVIDUALS = 30
 DEFAULT_FLOW_STEPS = 8
 MAX_FLOW_STEPS = 16
+MAX_CONTEXT_INDIVIDUALS = 128
+MAX_CONTEXT_OBSERVATIONS = 8_192
+MAX_CONTEXT_QUERY_TIMES = 1_024
 VPC_REPLICATES = 200
 VPC_REQUESTED_BINS = 10
 VPC_SEED_OFFSET = 104729
@@ -132,10 +135,28 @@ def route(value: Any) -> str:
 
 def build_cohort(study: dict[str, Any]) -> dict[str, Any]:
     subjects: dict[str, list[tuple[float, float]]] = {}
-    for subject in study.get("subjects") or []:
+    raw_subjects = study.get("subjects") or []
+    if not isinstance(raw_subjects, list):
+        raise ValueError("study subjects must be a list")
+    if len(raw_subjects) > MAX_CONTEXT_INDIVIDUALS:
+        raise ValueError(
+            f"PFF inference accepts at most {MAX_CONTEXT_INDIVIDUALS} individuals"
+        )
+    raw_observations = 0
+    for subject in raw_subjects:
+        if not isinstance(subject, dict):
+            raise ValueError("each study subject must be an object")
         identifier = str(subject.get("id") or "").strip()
         points = []
-        for index, point in enumerate(subject.get("points") or []):
+        raw_points = subject.get("points") or []
+        if not isinstance(raw_points, list):
+            raise ValueError(f"points for subject {identifier!r} must be a list")
+        raw_observations += len(raw_points)
+        if raw_observations > MAX_CONTEXT_OBSERVATIONS:
+            raise ValueError(
+                f"PFF inference accepts at most {MAX_CONTEXT_OBSERVATIONS} observations"
+            )
+        for index, point in enumerate(raw_points):
             if not isinstance(point, list) or len(point) != 2:
                 raise ValueError(f"invalid point for subject {identifier!r}")
             observation_time = finite(point[0], f"subject time {index}")
@@ -146,6 +167,11 @@ def build_cohort(study: dict[str, Any]) -> dict[str, Any]:
             subjects[identifier] = sorted(points)
     if len(subjects) < 2:
         raise ValueError("PFF generation requires at least two individual trajectories")
+    query_times = {point[0] for curve in subjects.values() for point in curve}
+    if len(query_times) > MAX_CONTEXT_QUERY_TIMES:
+        raise ValueError(
+            f"PFF inference accepts at most {MAX_CONTEXT_QUERY_TIMES} distinct observation times"
+        )
     horizon = max(point[0] for curve in subjects.values() for point in curve)
     if horizon <= 0:
         raise ValueError("the empirical observation horizon must be positive")

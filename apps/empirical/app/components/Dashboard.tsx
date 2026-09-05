@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { runInference, serviceStatus, type InferenceResponse, type ModelId, type ServiceStatus } from "../lib/model-api";
 import { contextDoseRatio, doseEventDraft, observedProtocol, studyHorizon, validateDoseProtocol, validateInteger, type DoseEventDraft } from "../lib/protocol";
+import { MAX_UPLOAD_BYTES, parsePkDataset, type UploadRoute } from "../lib/pk-upload";
 import { dashboardRuntimeConfig } from "../lib/runtime-config";
 import type { Corpus, Study } from "../lib/types";
 import { ModelTrajectoryChart, ModelVpcChart, PkDistributionChart, TrajectoryChart, VpcChart } from "./StudyCharts";
@@ -71,6 +72,7 @@ async function wikipediaIntro(study: Study, signal: AbortSignal): Promise<Wikipe
 function WikipediaDescription({ study }: { study: Study }) {
   const [intro, setIntro] = useState<WikipediaIntro | null | undefined>();
   useEffect(() => {
+    if (study.origin === "Custom dataset") return undefined;
     const controller = new AbortController();
     wikipediaIntro(study, controller.signal).then(setIntro).catch((error: unknown) => {
       if (!(error instanceof DOMException && error.name === "AbortError")) setIntro(null);
@@ -78,6 +80,9 @@ function WikipediaDescription({ study }: { study: Study }) {
     return () => controller.abort();
   }, [study]);
 
+  if (study.origin === "Custom dataset") return <p>
+    User-supplied PK observations from {study.study}. The dataset is processed locally in this browser and is not uploaded or retained by the dashboard.
+  </p>;
   if (intro === undefined) return <p className="description-loading">Loading description…</p>;
   if (intro === null) return <p className="description-loading">No Wikipedia introduction available.</p>;
   return <><p>{intro.paragraph}</p><a href={intro.url} target="_blank" rel="noreferrer">Wikipedia · {intro.title} ↗</a></>;
@@ -107,7 +112,12 @@ export function studyLabel(study: Study, studies: Study[]) {
   return `${study.drug} — ${dose}`;
 }
 
-function StudySelector({ studies, selected, onSelect }: { studies: Study[]; selected: Study; onSelect: (study: Study) => void }) {
+function StudySelector({ studies, selected, onSelect, onUpload }: {
+  studies: Study[];
+  selected: Study;
+  onSelect: (study: Study) => void;
+  onUpload: () => void;
+}) {
   const [query, setQuery] = useState("");
   const visibleStudies = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -115,6 +125,7 @@ function StudySelector({ studies, selected, onSelect }: { studies: Study[]; sele
   }, [query, studies]);
   return <aside className="study-browser">
     <div className="browser-header">
+      <button className="custom-dataset-button" type="button" onClick={onUpload}>Custom dataset</button>
       <input aria-label="Search drugs" placeholder="Search" value={query} onChange={(event) => setQuery(event.target.value)} />
     </div>
     <div className="drug-list">
@@ -122,6 +133,107 @@ function StudySelector({ studies, selected, onSelect }: { studies: Study[]; sele
       {!visibleStudies.length && <p className="empty-catalogue">No matches</p>}
     </div>
   </aside>;
+}
+
+export function DatasetUploadDialog({ onClose, onStudy }: {
+  onClose: () => void;
+  onStudy: (study: Study) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState("");
+  const [route, setRoute] = useState<UploadRoute>("auto");
+  const [candidate, setCandidate] = useState<{ filename: string; text: string } | null>(null);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  const importCandidate = (nextCandidate: { filename: string; text: string }, selectedRoute: UploadRoute) => {
+    try {
+      onStudy(parsePkDataset(nextCandidate.text, nextCandidate.filename, { route: selectedRoute }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The PK dataset could not be parsed");
+    }
+  };
+
+  const load = async (file: File | undefined) => {
+    if (!file) return;
+    setError("");
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`Files must be no larger than ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`);
+      return;
+    }
+    setReading(true);
+    try {
+      const nextCandidate = { filename: file.name, text: await file.text() };
+      setCandidate(nextCandidate);
+      importCandidate(nextCandidate, route);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The PK dataset could not be parsed");
+    } finally {
+      setReading(false);
+    }
+  };
+
+  return <div className="upload-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="upload-dialog" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+      <div className="upload-heading"><div><p>Custom dataset</p><h2 id="upload-title">Import PK observations</h2></div><button type="button" aria-label="Close dataset upload" onClick={onClose}>×</button></div>
+      <button
+        className={dragging ? "upload-dropzone active" : "upload-dropzone"}
+        type="button"
+        disabled={reading}
+        onClick={() => inputRef.current?.click()}
+        onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          void load(event.dataTransfer.files[0]);
+        }}
+      >
+        <strong>{reading ? "Reading dataset…" : "Drop a NONMEM, nlmixr2, or Monolix dataset here"}</strong>
+        <span>or click to browse files</span>
+      </button>
+      <input
+        ref={inputRef}
+        className="visually-hidden"
+        aria-label="Choose PK dataset file"
+        type="file"
+        accept=".csv,.tsv,.tab,.txt,.dta,text/csv,text/tab-separated-values,text/plain"
+        onChange={(event) => void load(event.target.files?.[0])}
+      />
+      <label className="upload-route">
+        <span>Administration route</span>
+        <select value={route} onChange={(event) => {
+          const nextRoute = event.target.value as UploadRoute;
+          setRoute(nextRoute);
+          setError("");
+          if (candidate) importCandidate(candidate, nextRoute);
+        }}>
+          <option value="auto">Read from dataset</option>
+          <option value="oral">Oral / extravascular</option>
+          <option value="iv">Intravenous</option>
+        </select>
+      </label>
+      <div className="upload-contract">
+        <p><strong>Population-PK event table</strong> · comma, tab, semicolon, or whitespace delimited</p>
+        <dl>
+          <div><dt>Core</dt><dd>ID, TIME, DV or Y</dd></div>
+          <div><dt>Events</dt><dd>AMT/AMOUNT, EVID, MDV, RATE, DUR/TINF, ADDL, II, SS</dd></div>
+          <div><dt>Metadata</dt><dd>ROUTE, DRUG, TIME_UNIT, DV_UNIT, DOSE_UNIT, MATRIX</dd></div>
+        </dl>
+        <p>NONMEM and nlmixr2 event coding and conventional Monolix column names are recognized. If route is not stored in the table, select it above. One file must describe one PK analyte and one common treatment regimen.</p>
+        <a className="upload-template" href="./data/pk-upload-template.csv" download>Download CSV template</a>
+      </div>
+      {error && <p className="upload-error" role="alert">{error}</p>}
+      <p className="upload-privacy">Maximum 5 MB. The file is parsed locally; only the resulting numeric cohort is sent when Pythia inference is requested.</p>
+    </section>
+  </div>;
 }
 
 export function ModelPanel({ study, onResult }: { study: Study; onResult: (result: InferenceResponse | null) => void }) {
@@ -142,8 +254,9 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [seed, setSeed] = useState("43");
-  const eligible = study.subjects.length >= 2;
+  const eligible = study.subjects.filter((subject) => subject.points.length >= 2).length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
   const drawsError = validateInteger(draws, 1, 30);
@@ -161,10 +274,21 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     return () => { active = false; window.clearInterval(timer); };
   }, []);
   useEffect(() => () => abortRequest.current?.abort(), []);
+  useEffect(() => {
+    if (!running) return undefined;
+    const started = Date.now();
+    const expectedDuration = hosted ? 15_000 : 8_000;
+    const timer = window.setInterval(() => {
+      const elapsed = Date.now() - started;
+      setProgress(Math.min(94, 2 + (elapsed / expectedDuration) * 88));
+    }, 120);
+    return () => window.clearInterval(timer);
+  }, [hosted, running]);
   const invalidate = () => {
     abortRequest.current?.abort();
     abortRequest.current = null;
     setRunning(false);
+    setProgress(0);
     setError("");
     onResult(null);
   };
@@ -202,7 +326,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     abortRequest.current?.abort();
     const controller = new AbortController();
     abortRequest.current = controller;
-    setRunning(true); setError(""); onResult(null);
+    setProgress(1); setRunning(true); setError(""); onResult(null);
     try {
       const nextResult = await runInference({
         modelId,
@@ -218,9 +342,15 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
         solver: { method: "heun", steps: 8 },
         seed: Number(seed),
       }, controller.signal);
-      if (!controller.signal.aborted) onResult(nextResult);
+      if (!controller.signal.aborted) {
+        setProgress(100);
+        onResult(nextResult);
+      }
     } catch (reason) {
-      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Pythia-PK inference failed");
+      if (!controller.signal.aborted) {
+        setProgress(0);
+        setError(reason instanceof Error ? reason.message : "Pythia-PK inference failed");
+      }
     } finally {
       if (abortRequest.current === controller) {
         abortRequest.current = null;
@@ -233,10 +363,12 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
       <h2>Pythia-PK</h2>
       <span className={selectedStatus?.ready ? "status connected" : "status"}>{selectedStatus?.ready ? `CPU · ${selectedStatus.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span>
     </div>
-    <div className="model-selector" role="group" aria-label="Pythia model">
-      <button type="button" className={modelId === "pythia" ? "active" : ""} aria-pressed={modelId === "pythia"} onClick={() => selectModel("pythia")}>Pythia</button>
-      <button type="button" className={modelId === "pythia_dose" ? "active" : ""} aria-pressed={modelId === "pythia_dose"} onClick={() => selectModel("pythia_dose")}>Pythia-Dose</button>
-    </div>
+    <label className="model-select">Models
+      <select aria-label="Models" value={modelId} onChange={(event) => selectModel(event.target.value as ModelId)}>
+        <option value="pythia">Pythia</option>
+        <option value="pythia_dose">Pythia-Dose</option>
+      </select>
+    </label>
     {modelId === "pythia_dose" && <><div className="event-list">
       {events.map((event, index) => {
         const eventErrors = protocol.errors[event.id] ?? {};
@@ -262,7 +394,10 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     {modelId === "pythia_dose" && eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
     <div className="inference-actions">
-      <button type="button" className="primary-button" disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>{running ? "Running inference…" : `Run ${modelId === "pythia" ? "Pythia" : "Pythia-Dose"}`}</button>
+      <button type="button" className="primary-button inference-progress" aria-label={running ? "Running zero-shot inference" : "Run zero-shot inference"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
+        <span className="inference-progress-fill" role="progressbar" aria-label="Inference progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} style={{ width: `${progress}%` }} />
+        <span className="inference-progress-label">{running ? "Running zero-shot inference…" : "Run zero-shot inference"}</span>
+      </button>
     </div>
   </section>;
 }
@@ -317,6 +452,8 @@ function IndividualsCaption({ study, result, showStudyContext }: {
 
 export function Dashboard() {
   const [corpus, setCorpus] = useState<Corpus | null>(null);
+  const [customStudy, setCustomStudy] = useState<Study | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
   const [vpcLogY, setVpcLogY] = useState(false);
   const [trajectoryLogY, setTrajectoryLogY] = useState(false);
@@ -325,7 +462,8 @@ export function Dashboard() {
   const [showStudyContext, setShowStudyContext] = useState(true);
   useEffect(() => { fetch(dashboardRuntimeConfig().corpusUrl).then((response) => response.json()).then(setCorpus); }, []);
   if (!corpus) return <main className="loading"><div className="loading-mark" />Loading PK catalogue…</main>;
-  const selected = corpus.studies.find((study) => study.id === selectedId) ?? corpus.studies[0];
+  const studies = customStudy ? [customStudy, ...corpus.studies] : corpus.studies;
+  const selected = studies.find((study) => study.id === selectedId) ?? studies[0];
   const empiricalVpc = selected.subjects.length > 0;
   const modelLabel = modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
   return <div className="dashboard-shell" data-theme={darkMode ? "dark" : "light"}>
@@ -336,7 +474,7 @@ export function Dashboard() {
       </div>
     </header>
     <div className="workspace">
-      <StudySelector studies={corpus.studies} selected={selected} onSelect={(study) => { setSelectedId(study.id); setModelResult(null); setShowStudyContext(true); }} />
+      <StudySelector studies={studies} selected={selected} onUpload={() => setUploadOpen(true)} onSelect={(study) => { setSelectedId(study.id); setModelResult(null); setShowStudyContext(true); }} />
       <main className="content">
         <section className="study-title">
           <h1>{selected.drug}</h1>
@@ -364,5 +502,12 @@ export function Dashboard() {
         </section>
       </main>
     </div>
+    {uploadOpen && <DatasetUploadDialog onClose={() => setUploadOpen(false)} onStudy={(study) => {
+      setCustomStudy(study);
+      setSelectedId(study.id);
+      setModelResult(null);
+      setShowStudyContext(true);
+      setUploadOpen(false);
+    }} />}
   </div>;
 }
