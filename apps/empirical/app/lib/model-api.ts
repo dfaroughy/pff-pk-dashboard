@@ -21,6 +21,21 @@ export type InferenceResponse = {
   request: Omit<InferenceRequest, "study" | "batchSize"> & { studyId: string };
   queryTime: number[];
   generatedConcentration: number[][];
+  vpc: {
+    method: "pharmpy";
+    generatedIndividuals: number;
+    simulatedCohortReplicates: number;
+    requestedBins: number;
+    effectiveBins: number;
+    points: Array<{
+      time: number;
+      timeLower: number;
+      timeUpper: number;
+      nObservations: number;
+      observed: { q05: number; q50: number; q95: number };
+      simulated: Record<"q05" | "q50" | "q95", { center: number; lower: number; upper: number }>;
+    }>;
+  };
   units: { time: string; concentration: string };
   provenance: {
     checkpointSha256: string;

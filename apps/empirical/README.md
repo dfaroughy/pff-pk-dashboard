@@ -83,6 +83,11 @@ g to mg, matching the validated adapter in `pff_pk.inference.empirical`.
 - An **observed VPC** is only shown when individual records are available. Its
   curves are the empirical 5th, 50th and 95th percentiles among subjects
   observed at each exact sampling time.
+- After model inference, the VPC is computed server-side with Pharmpy. The same
+  finite pool shown in the trajectory panel (20 individuals by default) is
+  resampled into 200 inexpensive cohorts matched to the empirical individual
+  observation schedules. Pharmpy applies equal-number time binning and computes
+  the observed quantiles and simulated 90% intervals.
 - Summary-only records show the published mean and mean ± SD. They are clearly
   labelled and are not presented as an individual-level VPC.
 - Cmax, Tmax and AUClast are computed from the displayed median (individual

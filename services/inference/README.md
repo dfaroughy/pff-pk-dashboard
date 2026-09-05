@@ -12,6 +12,12 @@ v6 dose-event model and supports dose counterfactuals and interventions. Both
 models generate on the union of empirical observation times. The model
 identifier is part of each content-addressed cache key and response.
 
+Each response also contains a formal Pharmpy VPC summary. Pharmpy receives the
+same finite pool returned in `generatedConcentration`—20 curves by default—and
+constructs 200 design-matched cohort replicates by resampling those curves. It
+owns equal-number time binning and the observed and simulated quantiles. The
+replicate count therefore does not represent additional neural-model draws.
+
 For local development, run `npm run dev:empirical` from the repository root.
 The application wrapper starts this service with the sibling `pff_pk`
 environment. The future Hugging Face Space must import this implementation

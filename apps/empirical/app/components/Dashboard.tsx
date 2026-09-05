@@ -142,6 +142,8 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
+  const [seed, setSeed] = useState(42);
+  const [hasResult, setHasResult] = useState(false);
   const eligible = study.subjects.length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
@@ -164,6 +166,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     abortRequest.current = null;
     setRunning(false);
     setError("");
+    setHasResult(false);
     onResult(null);
   };
   const change = (id: string, field: "time" | "amount", value: string) => {
@@ -192,7 +195,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     setEvents(resetDrafts());
     invalidate();
   };
-  const submit = async () => {
+  const submit = async (requestSeed: number) => {
     if (!controlsValid) {
       setError("Correct the highlighted protocol settings before running inference.");
       return;
@@ -200,7 +203,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     abortRequest.current?.abort();
     const controller = new AbortController();
     abortRequest.current = controller;
-    setRunning(true); setError(""); onResult(null);
+    setRunning(true); setError(""); setHasResult(false); onResult(null);
     try {
       const nextResult = await runInference({
         modelId,
@@ -214,9 +217,12 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
         nDraws: Number(draws),
         batchSize: 8,
         solver: { method: "heun", steps: 8 },
-        seed: 161803,
+        seed: requestSeed,
       }, controller.signal);
-      if (!controller.signal.aborted) onResult(nextResult);
+      if (!controller.signal.aborted) {
+        setHasResult(true);
+        onResult(nextResult);
+      }
     } catch (reason) {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Pythia-PK inference failed");
     } finally {
@@ -225,6 +231,11 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
         setRunning(false);
       }
     }
+  };
+  const resample = () => {
+    const nextSeed = seed === 2**31 - 1 ? 0 : seed + 1;
+    setSeed(nextSeed);
+    void submit(nextSeed);
   };
   return <section className="model-panel card">
     <div className="section-heading">
@@ -259,7 +270,8 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     {modelId === "pythia_dose" && eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
     <div className="inference-actions">
-      <button type="button" className="primary-button" disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={submit}>{running ? "Running inference…" : `Run ${modelId === "pythia" ? "Pythia" : "Pythia-Dose"}`}</button>
+      <button type="button" className="primary-button" disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit(seed)}>{running ? "Running inference…" : `Run ${modelId === "pythia" ? "Pythia" : "Pythia-Dose"}`}</button>
+      {hasResult && <button type="button" className="resample-button" disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={resample}>Resample</button>}
     </div>
   </section>;
 }
@@ -297,7 +309,7 @@ export function Dashboard() {
         </section>
         <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
         <section className="results-grid">
-          <article className="card chart-card"><div className="card-heading"><h2>VPC</h2><div className="chart-actions"><span className="legend">{modelResult ? <><i className="generated-band" />{modelLabel}{showStudyContext && <><i className="cyan-dashed-line" />Study</>}</> : <><i className="blue-line" />{empiricalVpc ? "Median" : "Mean"}<i className="cyan-dashed-line" />{empiricalVpc ? "5–95%" : "±SD"}</>}</span><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>{modelResult ? <ModelVpcChart result={modelResult} study={selected} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={selected} logY={vpcLogY} />}</article>
+          <article className="card chart-card"><div className="card-heading"><h2>VPC</h2><div className="chart-actions"><span className="legend">{modelResult ? <><i className="generated-band" />{modelLabel}{showStudyContext && <><i className="cyan-dashed-line" />Study</>}</> : <><i className="blue-line" />{empiricalVpc ? "Median" : "Mean"}<i className="cyan-dashed-line" />{empiricalVpc ? "5–95%" : "±SD"}</>}</span><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>{modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={selected} logY={vpcLogY} />}</article>
           <article className="card chart-card"><div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}{(!modelResult || showStudyContext) && <><i className="blue-line" />Study</>}</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>{modelResult ? <ModelTrajectoryChart result={modelResult} study={selected} logY={trajectoryLogY} showEmpirical={showStudyContext} /> : <TrajectoryChart study={selected} logY={trajectoryLogY} />}</article>
           <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
             <PkDistributionChart study={selected} result={modelResult} />

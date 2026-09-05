@@ -121,35 +121,18 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { r
   />;
 }
 
-function bootstrapBand(values: number[], probability: number, seed: number) {
-  let state = seed || 1;
-  const random = () => {
-    state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
-    return (state >>> 0) / 4294967296;
-  };
-  const estimates = Array.from({ length: 200 }, () => quantile(
-    Array.from({ length: values.length }, () => values[Math.floor(random() * values.length)]),
-    probability,
-  ));
-  return { lower: quantile(estimates, 0.05), center: quantile(values, probability), upper: quantile(estimates, 0.95) };
-}
-
-export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: InferenceResponse; study: Study; logY: boolean; showEmpirical: boolean }) {
-  const model = useMemo(() => result.queryTime.map((time, index) => {
-    const values = result.generatedConcentration.map((sample) => sample[index]).filter(Number.isFinite);
-    return { time, low: bootstrapBand(values, 0.05, 11_003 + index), median: bootstrapBand(values, 0.5, 23_009 + index), high: bootstrapBand(values, 0.95, 37_019 + index) };
-  }), [result]);
-  const point = (key: "low" | "median" | "high", bound: "lower" | "center" | "upper") => model.map((entry) => [entry.time, entry[key][bound]] as Point);
-  const empiricalVpc = showEmpirical ? observedVpc(study).filter((entry) => entry.n >= 2) : [];
-  const empiricalSeries = empiricalVpc.length ? [
-    empiricalVpc.map((entry) => [entry.time, entry.q05] as Point),
-    empiricalVpc.map((entry) => [entry.time, entry.q50] as Point),
-    empiricalVpc.map((entry) => [entry.time, entry.q95] as Point),
+export function ModelVpcChart({ result, logY, showEmpirical }: { result: InferenceResponse; logY: boolean; showEmpirical: boolean }) {
+  const model = result.vpc.points;
+  const point = (key: "q05" | "q50" | "q95", bound: "lower" | "center" | "upper") => model.map((entry) => [entry.time, entry.simulated[key][bound]] as Point);
+  const empiricalSeries = showEmpirical ? [
+    model.map((entry) => [entry.time, entry.observed.q05] as Point),
+    model.map((entry) => [entry.time, entry.observed.q50] as Point),
+    model.map((entry) => [entry.time, entry.observed.q95] as Point),
   ] : [];
   const generatedQuantiles = [
-    point("low", "center"),
-    point("median", "center"),
-    point("high", "center"),
+    point("q05", "center"),
+    point("q50", "center"),
+    point("q95", "center"),
   ];
   return <Chart
     series={[...empiricalSeries, ...generatedQuantiles]}
@@ -158,14 +141,14 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
       ...generatedQuantiles.map(() => ({ stroke: "var(--vpc-generated-line)", width: 0.4, dash: "7 5" })),
     ]}
     bands={[
-      { lower: point("low", "lower"), upper: point("low", "upper"), fill: "var(--generated-band-fill)" },
-      { lower: point("median", "lower"), upper: point("median", "upper"), fill: "var(--generated-median-band-fill)" },
-      { lower: point("high", "lower"), upper: point("high", "upper"), fill: "var(--generated-band-fill)" },
+      { lower: point("q05", "lower"), upper: point("q05", "upper"), fill: "var(--generated-band-fill)" },
+      { lower: point("q50", "lower"), upper: point("q50", "upper"), fill: "var(--generated-median-band-fill)" },
+      { lower: point("q95", "lower"), upper: point("q95", "upper"), fill: "var(--generated-band-fill)" },
     ]}
     logY={logY}
     xLabel={`Time (${result.units.time})`}
     yLabel={`Concentration (${result.units.concentration})`}
-    ariaLabel="Pythia-PK generated visual predictive check with bootstrap percentile intervals"
+    ariaLabel="Pythia-PK visual predictive check computed with Pharmpy"
   />;
 }
 

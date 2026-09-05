@@ -27,7 +27,9 @@ does not consume visitors' daily GPU quota.
 Public requests generate 20 individuals by default and are capped at 30
 individuals. The demo fixes flow integration to eight Heun steps; solver
 controls are not exposed. These limits are enforced by both the dashboard and
-the inference service.
+the inference service. Pharmpy computes each displayed VPC from that same
+generated pool using design-matched resampled cohorts and equal-number time
+bins.
 
 The named Gradio endpoints are `/health` and `/inference`. Inference is
 serialized to keep memory use bounded; identical requests reuse a response

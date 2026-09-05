@@ -20,6 +20,7 @@ vi.mock("../app/lib/model-api", () => ({
 }));
 
 const { ModelPanel, firstParagraph, studyLabel } = await import("../app/components/Dashboard");
+const { ModelVpcChart } = await import("../app/components/StudyCharts");
 
 const study: Study = {
   id: "test-study",
@@ -50,6 +51,25 @@ const response: InferenceResponse = {
   request: { modelId: "pythia_dose", doseEvents: [], nDraws: 20, solver: { method: "heun", steps: 8 }, seed: 1, studyId: study.id },
   queryTime: [0.5, 24],
   generatedConcentration: [[1, 0.1]],
+  vpc: {
+    method: "pharmpy",
+    generatedIndividuals: 1,
+    simulatedCohortReplicates: 200,
+    requestedBins: 10,
+    effectiveBins: 1,
+    points: [{
+      time: 12,
+      timeLower: 0.5,
+      timeUpper: 24,
+      nObservations: 4,
+      observed: { q05: 0.1, q50: 1, q95: 3 },
+      simulated: {
+        q05: { center: 0.1, lower: 0.1, upper: 0.1 },
+        q50: { center: 0.5, lower: 0.1, upper: 1 },
+        q95: { center: 1, lower: 1, upper: 1 },
+      },
+    }],
+  },
   units: { time: "h", concentration: "ng/mL" },
   provenance: { checkpointSha256: "abc", normalization: "test", sourceProcess: {}, device: "cpu", runtimeSeconds: 0.1 },
 };
@@ -82,6 +102,11 @@ test("exposes only the conservative generated-individual control", async () => {
   expect(screen.getByRole("button", { name: "Pythia" }).getAttribute("aria-pressed")).toBe("true");
 });
 
+test("renders the server-side Pharmpy VPC summary", () => {
+  render(<ModelVpcChart result={response} logY={false} showEmpirical={true} />);
+  expect(screen.getByRole("img", { name: "Pythia-PK visual predictive check computed with Pharmpy" })).toBeTruthy();
+});
+
 test("Pythia is generation-only and sends the baseline protocol", async () => {
   const user = userEvent.setup();
   mocks.runInference.mockResolvedValue({
@@ -97,10 +122,28 @@ test("Pythia is generation-only and sends the baseline protocol", async () => {
   await user.click(runButton);
 
   await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0].seed).toBe(42);
   expect(mocks.runInference.mock.calls[0][0].modelId).toBe("pythia");
   expect(mocks.runInference.mock.calls[0][0].doseEvents).toEqual([
     { time: 0, amount: 10, unit: "mg", route: "oral" },
   ]);
+});
+
+test("resampling advances the seed and requests new individuals", async () => {
+  const user = userEvent.setup();
+  mocks.runInference.mockResolvedValue(response);
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
+
+  const runButton = screen.getByRole("button", { name: "Run Pythia" });
+  await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByRole("button", { name: "Resample" })).toBeNull();
+  await user.click(runButton);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Resample" })).toBeTruthy());
+  await user.click(screen.getByRole("button", { name: "Resample" }));
+
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledTimes(2));
+  expect(mocks.runInference.mock.calls[0][0].seed).toBe(42);
+  expect(mocks.runInference.mock.calls[1][0].seed).toBe(43);
 });
 
 test("intervention dose and time accept full decimal replacement and reach inference", async () => {

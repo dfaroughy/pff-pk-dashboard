@@ -24,6 +24,11 @@ class SpaceSourceTests(unittest.TestCase):
         ast.parse((self.root / "app.py").read_text(encoding="utf-8"))
         ast.parse((self.root / "build_bundle.py").read_text(encoding="utf-8"))
 
+    def test_runtime_installs_pharmpy_for_formal_vpc_statistics(self) -> None:
+        requirements = (self.root / "requirements.txt").read_text(encoding="utf-8")
+        self.assertIn("pharmpy-core", requirements)
+        self.assertIn("pandas", requirements)
+
     def test_public_solver_is_fixed(self) -> None:
         tree = ast.parse((self.root / "app.py").read_text(encoding="utf-8"))
         assignment = next(

@@ -37,6 +37,11 @@ from pff_pk.inference.empirical import (  # noqa: E402
 )
 from pff_pk.inference.model import load_inference_model  # noqa: E402
 
+try:  # module import in tests and the hosted Space
+    from services.inference.pharmpy_vpc import pharmpy_vpc_summary  # noqa: E402
+except ModuleNotFoundError:  # direct execution from services/inference
+    from pharmpy_vpc import pharmpy_vpc_summary  # type: ignore[no-redef]  # noqa: E402
+
 DEFAULT_CONFIG = PFF_ROOT / "configs" / "amarel_v6_protocol_counterfactual_phase2_sparse.yaml"
 DEFAULT_CHECKPOINT = (
     PFF_ROOT / "artifacts" / "checkpoints" / "lucid_marten_v6_step750"
@@ -58,6 +63,9 @@ DEFAULT_GENERATED_INDIVIDUALS = 20
 MAX_GENERATED_INDIVIDUALS = 30
 DEFAULT_FLOW_STEPS = 8
 MAX_FLOW_STEPS = 16
+VPC_REPLICATES = 200
+VPC_REQUESTED_BINS = 10
+VPC_SEED_OFFSET = 104729
 PYTHIA_MODEL = "pythia"
 PYTHIA_DOSE_MODEL = "pythia_dose"
 DEFAULT_MODEL = PYTHIA_DOSE_MODEL
@@ -317,7 +325,7 @@ class ModelRuntime:
         )
         cpu_batch = union_query_batch(cpu_batch)
         query_time = cpu_batch.target_time.numpy()[0, :, 0] * cohort["horizon"]
-        seed = bounded_integer(request.get("seed", 161803), "seed", 0, 2**31 - 1)
+        seed = bounded_integer(request.get("seed", 42), "seed", 0, 2**31 - 1)
         started = time.perf_counter()
         chunks = []
         for start in range(0, n_draws, batch_size):
@@ -334,6 +342,14 @@ class ModelRuntime:
                 physical = inverse_concentration(normalized, repeated).float().cpu().numpy()
             chunks.append(physical[..., 0])
         samples = np.concatenate(chunks, axis=0)
+        vpc = pharmpy_vpc_summary(
+            samples,
+            query_time,
+            cohort,
+            replicates=VPC_REPLICATES,
+            requested_bins=VPC_REQUESTED_BINS,
+            seed=seed + VPC_SEED_OFFSET,
+        )
         elapsed = time.perf_counter() - started
         return {
             "inferenceId": "",
@@ -349,6 +365,7 @@ class ModelRuntime:
             },
             "queryTime": query_time.tolist(),
             "generatedConcentration": samples.tolist(),
+            "vpc": vpc,
             "units": {"time": cohort["time_units"], "concentration": cohort["concentration_units"]},
             "provenance": {
                 "checkpointSha256": self.checkpoint_sha256,
@@ -423,7 +440,7 @@ def cached_inference(request: dict[str, Any]) -> dict[str, Any]:
     runtime = runtime_for_request(request)
     runtime.load()
     cache_key = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "request": request,
         "checkpointSha256": runtime.checkpoint_sha256,
         "configSha256": hashlib.sha256(runtime.config_path.read_bytes()).hexdigest(),

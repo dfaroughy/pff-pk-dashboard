@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+import numpy as np
+
 from services.inference.pff_service import (
     DEFAULT_FLOW_STEPS,
     DEFAULT_GENERATED_INDIVIDUALS,
@@ -12,6 +14,7 @@ from services.inference.pff_service import (
     requested_model,
     target_dose_events,
 )
+from services.inference.pharmpy_vpc import pharmpy_vpc_summary
 
 
 class RequestValidationTests(unittest.TestCase):
@@ -81,6 +84,37 @@ class RequestValidationTests(unittest.TestCase):
                 ],
                 self.cohort,
             )
+
+
+class PharmpyVpcTests(unittest.TestCase):
+    def test_summary_uses_only_the_supplied_generated_pool(self) -> None:
+        times = np.array([0.5, 1.0, 2.0, 4.0])
+        baseline = np.array([10.0, 8.0, 5.0, 2.0])
+        pool = np.stack([baseline * scale for scale in np.linspace(0.7, 1.3, 20)])
+        cohort = {
+            "horizon": 4.0,
+            "subjects": {
+                "a": list(zip(times, baseline * 0.9, strict=True)),
+                "b": list(zip(times, baseline, strict=True)),
+                "c": list(zip(times, baseline * 1.1, strict=True)),
+            },
+        }
+
+        summary = pharmpy_vpc_summary(
+            pool,
+            times,
+            cohort,
+            replicates=40,
+            requested_bins=3,
+            seed=7,
+        )
+
+        self.assertEqual(summary["method"], "pharmpy")
+        self.assertEqual(summary["generatedIndividuals"], 20)
+        self.assertEqual(summary["simulatedCohortReplicates"], 40)
+        self.assertEqual(summary["effectiveBins"], 3)
+        self.assertEqual(len(summary["points"]), 3)
+        self.assertTrue(all(point["nObservations"] > 0 for point in summary["points"]))
 
 if __name__ == "__main__":
     unittest.main()

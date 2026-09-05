@@ -34,7 +34,8 @@ def main() -> None:
     copy_tree(arguments.pff_repo.resolve() / "pff_pk", output / "pff_pk")
     service = output / "services" / "inference"
     service.mkdir(parents=True)
-    shutil.copy2(here.parent / "inference" / "pff_service.py", service / "pff_service.py")
+    for name in ("pff_service.py", "pharmpy_vpc.py"):
+        shutil.copy2(here.parent / "inference" / name, service / name)
     (output / "services" / "__init__.py").touch()
     (service / "__init__.py").touch()
 

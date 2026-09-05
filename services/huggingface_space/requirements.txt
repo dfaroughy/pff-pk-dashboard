@@ -2,5 +2,7 @@ gradio>=6,<7
 huggingface-hub>=1.0,<2
 lightning>=2.6,<2.7
 numpy>=1.26,<3
+pandas>=2.2,<4
+pharmpy-core>=2.1,<2.2
 pyyaml>=6,<7
 torch==2.8.0

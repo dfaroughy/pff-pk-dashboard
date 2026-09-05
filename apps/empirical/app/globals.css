@@ -283,10 +283,13 @@ button { cursor: pointer; }
 .secondary-button:hover { border-color: var(--cyan); color: var(--cyan); }
 .secondary-button.quiet { border-color: transparent; color: var(--muted); }
 .model-controls { display: grid; max-width: 230px; margin: 14px 0 10px; }
-.inference-actions { display: grid; grid-template-columns: 1fr; gap: 7px; }
+.inference-actions { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
 .primary-button { width: 100%; border: 1px solid var(--acid-fill); border-radius: 0; padding: 10px; background: var(--acid-fill); color: #142015; font-size: 10px; font-weight: 750; letter-spacing: .035em; }
 .primary-button:hover:not(:disabled) { background: transparent; color: var(--acid); }
 .primary-button:disabled { border-color: var(--line); background: var(--line); color: var(--muted); cursor: not-allowed; }
+.resample-button { border: 1px solid var(--magenta); border-radius: 0; padding: 10px 13px; background: transparent; color: var(--magenta); font-size: 10px; font-weight: 750; letter-spacing: .035em; }
+.resample-button:hover:not(:disabled) { background: var(--magenta); color: var(--paper); }
+.resample-button:disabled { border-color: var(--line); color: var(--muted); cursor: not-allowed; opacity: .55; }
 .model-warning, .model-error { border-left: 2px solid; padding: 8px 9px; font-size: 9px; line-height: 1.4; }
 .model-warning { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 9%, transparent); color: var(--orange); }
 .model-error { border-color: var(--magenta); background: color-mix(in srgb, var(--magenta) 9%, transparent); color: var(--magenta); }
