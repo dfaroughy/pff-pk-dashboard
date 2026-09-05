@@ -267,6 +267,54 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   </section>;
 }
 
+function VpcLegend({ result, showStudyContext, empiricalVpc }: {
+  result: InferenceResponse | null;
+  showStudyContext: boolean;
+  empiricalVpc: boolean;
+}) {
+  if (!result) return <span className="legend">
+    <i className="cyan-solid-line" />{empiricalVpc ? "50%" : "Mean"}
+    <i className={empiricalVpc ? "cyan-dashed-line" : "blue-band"} />{empiricalVpc ? "5/95%" : "±SD"}
+  </span>;
+  return <span className="legend">
+    <i className="generated-outer-band" />Pythia 5/95%
+    <i className="generated-median-band" />Pythia 50%
+    {showStudyContext && <>
+      <i className="cyan-solid-line" />Study 50%
+      <i className="cyan-dashed-line" />Study 5/95%
+    </>}
+  </span>;
+}
+
+function VpcCaption({ study, result, showStudyContext }: {
+  study: Study;
+  result: InferenceResponse | null;
+  showStudyContext: boolean;
+}) {
+  if (!study.subjects.length) return <p className="plot-caption">
+    Published concentration summary for {study.drug}. The solid curve is the reported mean and the shaded region is ±SD.
+  </p>;
+  if (!result) return <p className="plot-caption">
+    Visual predictive check for {study.drug} with N={study.subjects.length} individuals. The solid curve is the observed median; dashed curves are the observed 5th and 95th percentiles.
+  </p>;
+  return <p className="plot-caption">
+    Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. Solid curves are medians; dashed curves are 5th and 95th percentiles. Shaded regions are 90% simulation intervals estimated with Pharmpy.{showStudyContext ? "" : " The observed study overlay is hidden."}
+  </p>;
+}
+
+function IndividualsCaption({ study, result, showStudyContext }: {
+  study: Study;
+  result: InferenceResponse | null;
+  showStudyContext: boolean;
+}) {
+  if (!result) return <p className="plot-caption">
+    Individual concentration–time profiles for {study.drug} with N={study.subjects.length} individuals. Markers identify observation times.
+  </p>;
+  return <p className="plot-caption">
+    Individual concentration–time profiles for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. Markers identify observation or model-evaluation times.{showStudyContext ? "" : " The observed study context is hidden."}
+  </p>;
+}
+
 export function Dashboard() {
   const [corpus, setCorpus] = useState<Corpus | null>(null);
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
@@ -300,8 +348,16 @@ export function Dashboard() {
         </section>
         <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
         <section className="results-grid">
-          <article className="card chart-card"><div className="card-heading"><h2>VPC</h2><div className="chart-actions"><span className="legend">{modelResult ? <><i className="generated-band" />{modelLabel}{showStudyContext && <><i className="cyan-dashed-line" />Study</>}</> : <><i className="blue-line" />{empiricalVpc ? "Median" : "Mean"}<i className="cyan-dashed-line" />{empiricalVpc ? "5–95%" : "±SD"}</>}</span><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>{modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={selected} logY={vpcLogY} />}</article>
-          <article className="card chart-card"><div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}{(!modelResult || showStudyContext) && <><i className="blue-line" />Study</>}</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>{modelResult ? <ModelTrajectoryChart result={modelResult} study={selected} logY={trajectoryLogY} showEmpirical={showStudyContext} /> : <TrajectoryChart study={selected} logY={trajectoryLogY} />}</article>
+          <article className="card chart-card">
+            <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} showStudyContext={showStudyContext} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
+            {modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={selected} logY={vpcLogY} />}
+            <VpcCaption study={selected} result={modelResult} showStudyContext={showStudyContext} />
+          </article>
+          <article className="card chart-card">
+            <div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}{(!modelResult || showStudyContext) && <><i className="blue-line" />Study</>}</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
+            {modelResult ? <ModelTrajectoryChart result={modelResult} study={selected} logY={trajectoryLogY} showEmpirical={showStudyContext} /> : <TrajectoryChart study={selected} logY={trajectoryLogY} />}
+            <IndividualsCaption study={selected} result={modelResult} showStudyContext={showStudyContext} />
+          </article>
           <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
             <PkDistributionChart study={selected} result={modelResult} />
           </article>

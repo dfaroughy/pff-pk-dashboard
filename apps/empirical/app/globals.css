@@ -228,11 +228,15 @@ button { cursor: pointer; }
 .blue-line { background: var(--cyan); }
 .orange-line { background: var(--orange); }
 .red-line { background: var(--magenta); }
+.cyan-solid-line { background: var(--cyan); }
 .cyan-dashed-line { height: 0 !important; border-top: 2px dashed var(--cyan); background: transparent; }
 .blue-band { height: 8px !important; background: var(--blue-band-fill); }
 .orange-band { height: 8px !important; background: var(--orange-band-fill); }
 .generated-band { height: 8px !important; background: var(--generated-band-fill); }
+.generated-outer-band { height: 8px !important; background: var(--generated-band-fill); }
+.generated-median-band { height: 8px !important; background: var(--generated-median-band-fill); }
 .chart { display: block; width: 100%; height: auto; aspect-ratio: 1.618 / 1; }
+.plot-caption { min-height: 34px; margin: 3px 3px 0; color: var(--muted); font-family: Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 400; line-height: 1.45; }
 .gridline { stroke: color-mix(in srgb, var(--line) 58%, transparent); stroke-width: 1; }
 .axis { stroke: var(--line-bright); stroke-width: 1; }
 .tick { fill: var(--muted); font-family: var(--font-data); font-size: 14px; }
