@@ -325,7 +325,7 @@ class ModelRuntime:
         )
         cpu_batch = union_query_batch(cpu_batch)
         query_time = cpu_batch.target_time.numpy()[0, :, 0] * cohort["horizon"]
-        seed = bounded_integer(request.get("seed", 42), "seed", 0, 2**31 - 1)
+        seed = bounded_integer(request.get("seed", 43), "seed", 0, 2**31 - 1)
         started = time.perf_counter()
         chunks = []
         for start in range(0, n_draws, batch_size):

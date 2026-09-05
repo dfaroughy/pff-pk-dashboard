@@ -83,7 +83,7 @@ def pharmpy_vpc_summary(
     *,
     replicates: int = 200,
     requested_bins: int = 10,
-    seed: int = 42,
+    seed: int = 43,
 ) -> dict[str, Any]:
     """Compute a formal VPC from one finite pool of generated individuals.
 

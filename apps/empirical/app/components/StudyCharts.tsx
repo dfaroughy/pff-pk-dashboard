@@ -112,7 +112,7 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { r
     series={[...empirical, ...generated]}
     styles={[
       ...empirical.map(() => ({ stroke: "var(--trajectory-blue)", width: 1, opacity: 0.38, markers: true, radius: 1.4 })),
-      ...generated.map(() => ({ stroke: "var(--generated)", width: 1, opacity: 0.48 })),
+      ...generated.map(() => ({ stroke: "var(--generated)", width: 1, opacity: 0.48, markers: true, radius: 1.25 })),
     ]}
     logY={logY}
     xLabel={`Time (${result.units.time})`}
@@ -138,7 +138,13 @@ export function ModelVpcChart({ result, logY, showEmpirical }: { result: Inferen
     series={[...empiricalSeries, ...generatedQuantiles]}
     styles={[
       ...empiricalSeries.map((_, index) => ({ stroke: "var(--cyan)", width: index === 1 ? 1.5 : 0.75, markers: true, radius: 2.1, dash: index === 1 ? undefined : "7 5" })),
-      ...generatedQuantiles.map(() => ({ stroke: "var(--vpc-generated-line)", width: 0.4, dash: "7 5" })),
+      ...generatedQuantiles.map((_, index) => ({
+        stroke: "var(--vpc-generated-line)",
+        width: 0.4,
+        markers: true,
+        radius: 1.35,
+        dash: index === 1 ? undefined : "7 5",
+      })),
     ]}
     bands={[
       { lower: point("q05", "lower"), upper: point("q05", "upper"), fill: "var(--generated-band-fill)" },

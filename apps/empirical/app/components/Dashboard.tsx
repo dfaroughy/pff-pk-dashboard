@@ -142,13 +142,13 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
-  const [seed, setSeed] = useState(42);
-  const [hasResult, setHasResult] = useState(false);
+  const [seed, setSeed] = useState("43");
   const eligible = study.subjects.length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
   const drawsError = validateInteger(draws, 1, 30);
-  const controlsValid = (modelId === "pythia" || protocol.valid) && !drawsError;
+  const seedError = validateInteger(seed, 0, 2**31 - 1);
+  const controlsValid = (modelId === "pythia" || protocol.valid) && !drawsError && !seedError;
   const selectedStatus = status?.models?.[modelId]
     ?? (modelId === (status?.defaultModelId ?? "pythia_dose") ? status : null);
   useEffect(() => {
@@ -166,7 +166,6 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     abortRequest.current = null;
     setRunning(false);
     setError("");
-    setHasResult(false);
     onResult(null);
   };
   const change = (id: string, field: "time" | "amount", value: string) => {
@@ -195,7 +194,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     setEvents(resetDrafts());
     invalidate();
   };
-  const submit = async (requestSeed: number) => {
+  const submit = async () => {
     if (!controlsValid) {
       setError("Correct the highlighted protocol settings before running inference.");
       return;
@@ -203,7 +202,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     abortRequest.current?.abort();
     const controller = new AbortController();
     abortRequest.current = controller;
-    setRunning(true); setError(""); setHasResult(false); onResult(null);
+    setRunning(true); setError(""); onResult(null);
     try {
       const nextResult = await runInference({
         modelId,
@@ -217,12 +216,9 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
         nDraws: Number(draws),
         batchSize: 8,
         solver: { method: "heun", steps: 8 },
-        seed: requestSeed,
+        seed: Number(seed),
       }, controller.signal);
-      if (!controller.signal.aborted) {
-        setHasResult(true);
-        onResult(nextResult);
-      }
+      if (!controller.signal.aborted) onResult(nextResult);
     } catch (reason) {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Pythia-PK inference failed");
     } finally {
@@ -231,11 +227,6 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
         setRunning(false);
       }
     }
-  };
-  const resample = () => {
-    const nextSeed = seed === 2**31 - 1 ? 0 : seed + 1;
-    setSeed(nextSeed);
-    void submit(nextSeed);
   };
   return <section className="model-panel card">
     <div className="section-heading">
@@ -263,6 +254,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div></>}
     <div className="model-controls">
       <label className={drawsError ? "invalid" : ""}>Generated individuals <input aria-invalid={Boolean(drawsError)} type="number" min="1" max="30" step="1" value={draws} onChange={(event) => { setDraws(event.target.value); invalidate(); }} />{drawsError && <small className="field-error">{drawsError}</small>}</label>
+      <label className={seedError ? "invalid" : ""}>Random seed <input aria-invalid={Boolean(seedError)} type="number" min="0" max={2**31 - 1} step="1" value={seed} onChange={(event) => { setSeed(event.target.value); invalidate(); }} />{seedError && <small className="field-error">{seedError}</small>}</label>
     </div>
     {!eligible && <p className="model-warning">Interactive Pythia-PK inference requires at least two individual trajectories.</p>}
     {!selectedStatus?.ready && <p className="model-warning">{hosted ? "The hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
@@ -270,8 +262,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     {modelId === "pythia_dose" && eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
     <div className="inference-actions">
-      <button type="button" className="primary-button" disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit(seed)}>{running ? "Running inference…" : `Run ${modelId === "pythia" ? "Pythia" : "Pythia-Dose"}`}</button>
-      {hasResult && <button type="button" className="resample-button" disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={resample}>Resample</button>}
+      <button type="button" className="primary-button" disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>{running ? "Running inference…" : `Run ${modelId === "pythia" ? "Pythia" : "Pythia-Dose"}`}</button>
     </div>
   </section>;
 }
@@ -281,7 +272,7 @@ export function Dashboard() {
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
   const [vpcLogY, setVpcLogY] = useState(false);
   const [trajectoryLogY, setTrajectoryLogY] = useState(false);
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
   const [modelResult, setModelResult] = useState<InferenceResponse | null>(null);
   const [showStudyContext, setShowStudyContext] = useState(true);
   useEffect(() => { fetch(dashboardRuntimeConfig().corpusUrl).then((response) => response.json()).then(setCorpus); }, []);
@@ -291,7 +282,7 @@ export function Dashboard() {
   const modelLabel = modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
   return <div className="dashboard-shell" data-theme={darkMode ? "dark" : "light"}>
     <header className="topbar">
-      <div><div className="brand-mark">P/PK</div><p className="brand-title">Pythia-PK — prior-fitted flows for pharmacokinetics</p></div>
+      <div><div className="brand-mark">Pythia PK</div><p className="brand-title">Prior-fitted flows for pharmacokinetics</p></div>
       <div className="topbar-meta">
         <button className="theme-switch" type="button" aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`} aria-pressed={darkMode} onClick={() => setDarkMode(!darkMode)}><i>{darkMode ? "☾" : "☀"}</i><b>{darkMode ? "Dark" : "Light"}</b></button>
       </div>

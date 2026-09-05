@@ -90,7 +90,7 @@ afterEach(() => {
   mocks.runInference.mockReset();
 });
 
-test("exposes only the conservative generated-individual control", async () => {
+test("exposes only conservative public inference controls", async () => {
   render(<ModelPanel study={study} onResult={vi.fn()} />);
 
   const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
@@ -99,12 +99,20 @@ test("exposes only the conservative generated-individual control", async () => {
   expect(screen.queryByLabelText("Integrator")).toBeNull();
   expect(screen.queryByLabelText("Integration steps")).toBeNull();
   expect(screen.queryByLabelText("Checkpoint")).toBeNull();
+  expect((screen.getByLabelText("Random seed") as HTMLInputElement).valueAsNumber).toBe(43);
+  expect(screen.queryByRole("button", { name: "Resample" })).toBeNull();
   expect(screen.getByRole("button", { name: "Pythia" }).getAttribute("aria-pressed")).toBe("true");
 });
 
 test("renders the server-side Pharmpy VPC summary", () => {
-  render(<ModelVpcChart result={response} logY={false} showEmpirical={true} />);
-  expect(screen.getByRole("img", { name: "Pythia-PK visual predictive check computed with Pharmpy" })).toBeTruthy();
+  render(<ModelVpcChart result={response} logY={false} showEmpirical={false} />);
+  const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check computed with Pharmpy" });
+  const generated = chart.querySelectorAll("g[clip-path] > g");
+  expect(generated).toHaveLength(3);
+  expect(generated[0].querySelector("path")?.getAttribute("stroke-dasharray")).toBe("7 5");
+  expect(generated[1].querySelector("path")?.getAttribute("stroke-dasharray")).toBeNull();
+  expect(generated[2].querySelector("path")?.getAttribute("stroke-dasharray")).toBe("7 5");
+  expect(chart.querySelectorAll("circle")).toHaveLength(3);
 });
 
 test("Pythia is generation-only and sends the baseline protocol", async () => {
@@ -122,28 +130,27 @@ test("Pythia is generation-only and sends the baseline protocol", async () => {
   await user.click(runButton);
 
   await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
-  expect(mocks.runInference.mock.calls[0][0].seed).toBe(42);
+  expect(mocks.runInference.mock.calls[0][0].seed).toBe(43);
   expect(mocks.runInference.mock.calls[0][0].modelId).toBe("pythia");
   expect(mocks.runInference.mock.calls[0][0].doseEvents).toEqual([
     { time: 0, amount: 10, unit: "mg", route: "oral" },
   ]);
 });
 
-test("resampling advances the seed and requests new individuals", async () => {
+test("the user can select a reproducible inference seed", async () => {
   const user = userEvent.setup();
   mocks.runInference.mockResolvedValue(response);
   render(<ModelPanel study={study} onResult={vi.fn()} />);
 
+  const seed = screen.getByLabelText("Random seed");
+  await user.clear(seed);
+  await user.type(seed, "1729");
   const runButton = screen.getByRole("button", { name: "Run Pythia" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
-  expect(screen.queryByRole("button", { name: "Resample" })).toBeNull();
   await user.click(runButton);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Resample" })).toBeTruthy());
-  await user.click(screen.getByRole("button", { name: "Resample" }));
 
-  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledTimes(2));
-  expect(mocks.runInference.mock.calls[0][0].seed).toBe(42);
-  expect(mocks.runInference.mock.calls[1][0].seed).toBe(43);
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0].seed).toBe(1729);
 });
 
 test("intervention dose and time accept full decimal replacement and reach inference", async () => {
