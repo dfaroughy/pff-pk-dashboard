@@ -4,8 +4,10 @@ import type { Study } from "../lib/types";
 import {
   SYNTHETIC_LIMITS,
   generateSyntheticCohort,
+  previewSyntheticObservationTimes,
   sampleSyntheticModel,
   withDoseCount,
+  type SyntheticAcquisition,
   type SyntheticModelDraw,
 } from "../lib/synthetic-study";
 import type { DoseEvent, GraphDraw, RateDraw } from "../../../synthetic/app/lib/prior";
@@ -121,44 +123,94 @@ function equationForRate(rate: RateDraw) {
   return `J_{${label}}=\\kappa_{${label}}\\,r_{${label}}(\\tau)\\,X_${src}`;
 }
 
-function KineticTable({ rates }: { rates: RateDraw[] }) {
+function connectionType(graph: GraphDraw, rate: RateDraw) {
+  const source = graph.nodes.find((node) => node.id === rate.src)?.role.replace("_", " ") ?? "compartment";
+  const target = rate.dst === null
+    ? "elimination"
+    : graph.nodes.find((node) => node.id === rate.dst)?.role.replace("_", " ") ?? "compartment";
+  return `${source} → ${target}`;
+}
+
+function ParameterInput({ label, value, min, disabled = false, onCommit }: {
+  label: string;
+  value: number | null;
+  min: number;
+  disabled?: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const formatted = value === null ? "" : String(Number(value.toPrecision(5)));
+  const [draft, setDraft] = useState<string | null>(null);
+  const displayed = draft ?? formatted;
+  const commit = () => {
+    const parsed = Number(displayed);
+    if (displayed.trim() && Number.isFinite(parsed) && parsed >= min) onCommit(parsed);
+    setDraft(null);
+  };
+  return <input
+    aria-label={label}
+    type="number"
+    min={min}
+    step="any"
+    disabled={disabled}
+    value={displayed}
+    onFocus={() => setDraft(formatted)}
+    onChange={(event) => setDraft(event.target.value)}
+    onBlur={commit}
+    onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+  />;
+}
+
+function KineticTable({ graph, rates, onChange }: {
+  graph: GraphDraw;
+  rates: RateDraw[];
+  onChange: (id: string, patch: Partial<RateDraw>) => void;
+}) {
   return <div className="synthetic-table-wrap"><table className="synthetic-parameter-table">
-    <thead><tr><th>Flux</th><th>Law</th><th>κ</th><th>β</th><th>h</th><th>Variation</th></tr></thead>
+    <thead><tr><th>Flux</th><th>Type</th><th>Law</th><th>κ</th><th>β</th><th>h</th><th>Variation</th></tr></thead>
     <tbody>{rates.map((rate) => {
       const dst = rate.dst === null ? "∅" : compartmentSymbol(rate.dst);
+      const flux = `J${compartmentSymbol(rate.src)}${dst}`;
       return <tr key={rate.id}>
         <td>J<sub>{compartmentSymbol(rate.src)}{dst}</sub></td>
-        <td>{rate.beta === null ? "linear" : "saturable"}</td>
-        <td>{rate.kappa.toPrecision(3)}</td>
-        <td>{rate.beta === null ? "—" : rate.beta.toPrecision(3)}</td>
-        <td>{rate.beta === null ? "—" : rate.hill.toPrecision(3)}</td>
+        <td className="connection-type">{connectionType(graph, rate)}</td>
+        <td><select aria-label={`${flux} law`} value={rate.beta === null ? "linear" : "saturable"} onChange={(event) => onChange(rate.id, event.target.value === "linear" ? { beta: null } : { beta: rate.beta ?? 1, hill: rate.hill || 1 })}>
+          <option value="linear">Linear</option>
+          <option value="saturable">Saturable</option>
+        </select></td>
+        <td><ParameterInput label={`${flux} kappa`} value={rate.kappa} min={0.0001} onCommit={(value) => onChange(rate.id, { kappa: value })} /></td>
+        <td><ParameterInput label={`${flux} beta`} value={rate.beta} min={0.0001} disabled={rate.beta === null} onCommit={(value) => onChange(rate.id, { beta: value })} /></td>
+        <td><ParameterInput label={`${flux} Hill exponent`} value={rate.beta === null ? null : rate.hill} min={0.1} disabled={rate.beta === null} onCommit={(value) => onChange(rate.id, { hill: value })} /></td>
         <td>{rate.timeVarying ? `ν=${rate.nu}; ℓ=${rate.ell?.toFixed(2)}` : "constant"}</td>
       </tr>;
     })}</tbody>
   </table></div>;
 }
 
-function DoseTimeline({ events }: { events: DoseEvent[] }) {
+function DoseTimeline({ events, observationTimes }: { events: DoseEvent[]; observationTimes: number[][] }) {
   const left = 40;
   const right = 570;
-  const axisY = 62;
+  const axisY = 55;
   const x = (time: number) => left + Math.max(0, Math.min(1, time)) * (right - left);
-  return <svg className="synthetic-dose-timeline" viewBox="0 0 610 105" role="img" aria-label="Dimensionless dose protocol timeline">
+  return <svg className="synthetic-dose-timeline" viewBox="0 0 610 125" role="img" aria-label="Dimensionless dose and observation schedule timeline">
     <defs>
-      <marker id="timeline-arrow" markerWidth="7" markerHeight="7" refX="3.5" refY="6" orient="auto"><path d="M0,0 L7,0 L3.5,7 Z" /></marker>
+      <marker id="timeline-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" /></marker>
     </defs>
     <line className="timeline-axis" x1={left} y1={axisY} x2={right} y2={axisY} />
     {[0, 0.25, 0.5, 0.75, 1].map((time) => <g key={time}>
       <line className="timeline-tick" x1={x(time)} y1={axisY - 4} x2={x(time)} y2={axisY + 5} />
-      <text className="timeline-label" x={x(time)} y={axisY + 19}>{time.toFixed(2)}</text>
+      <text className="timeline-label" x={x(time)} y={105}>{time.toFixed(2)}</text>
     </g>)}
-    <text className="timeline-axis-title" x={right} y={axisY + 34}>dimensionless time τ</text>
+    <text className="timeline-observation-title" x={left} y={71}>observations</text>
+    {observationTimes.map((times, person) => <g key={`person-${person}`}>
+      {times.map((time, index) => <circle className="timeline-observation" key={`${time}-${index}`} cx={x(time)} cy={73 + person * 2.8} r="1.15" />)}
+    </g>)}
+    <text className="timeline-axis-title" x={right} y={120}>dimensionless time τ</text>
     {events.map((event, index) => {
       const start = x(event.time);
       if (event.duration > 0) {
         const width = Math.max(5, x(event.time + event.duration) - start);
         return <g key={`${event.time}-${index}`}>
-          <rect className="timeline-infusion" x={start} y={25} width={width} height={axisY - 25} />
+          <rect className="timeline-infusion" x={start} y={24} width={width} height={axisY - 24} />
           <text className="timeline-event-label" x={start + width / 2} y={18}>{event.amount.toFixed(2)}×</text>
         </g>;
       }
@@ -177,15 +229,17 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
   const [modelIndex, setModelIndex] = useState(0);
   const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(43));
   const [doseCount, setDoseCount] = useState(1);
+  const [acquisition, setAcquisition] = useState<SyntheticAcquisition>({ family: "exact", shape: "uniform" });
   const [individuals, setIndividuals] = useState(SYNTHETIC_LIMITS.individuals.default);
   const [observations, setObservations] = useState(SYNTHETIC_LIMITS.observations.default);
   const activeModel = useMemo(() => withDoseCount(model, doseCount), [doseCount, model]);
+  const observationPreview = useMemo(() => previewSyntheticObservationTimes(
+    model.seed,
+    Math.min(individuals, 8),
+    observations,
+    acquisition,
+  ), [acquisition, individuals, model.seed, observations]);
   const equations = useMemo(() => model.graph.nodes.map((node) => balanceEquation(model.graph, node.id)), [model.graph]);
-  const uniqueRateForms = useMemo(() => {
-    const representatives = new Map<string, RateDraw>();
-    model.kinetics.rates.forEach((rate) => representatives.set(rate.beta === null ? "linear" : "saturable", rate));
-    return [...representatives.values()];
-  }, [model.kinetics.rates]);
 
   const drawModel = () => {
     const nextIndex = modelIndex + 1;
@@ -193,7 +247,25 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
     setModel(sampleSyntheticModel(43 + nextIndex));
     onClear();
   };
-  const generate = () => onGenerate(generateSyntheticCohort(activeModel, individuals, observations));
+  const generate = () => onGenerate(generateSyntheticCohort(activeModel, individuals, observations, acquisition));
+  const changeRate = (id: string, patch: Partial<RateDraw>) => {
+    setModel((current) => {
+      const rates = current.kinetics.rates.map((rate) => rate.id === id ? { ...rate, ...patch } : rate);
+      return {
+        ...current,
+        kinetics: {
+          ...current.kinetics,
+          rates,
+          saturableCount: rates.filter((rate) => rate.beta !== null).length,
+        },
+      };
+    });
+    onClear();
+  };
+  const changeAcquisition = (patch: Partial<SyntheticAcquisition>) => {
+    setAcquisition((current) => ({ ...current, ...patch }));
+    onClear();
+  };
   const changeIndividuals = (value: number) => {
     setIndividuals(Math.max(SYNTHETIC_LIMITS.individuals.min, Math.min(SYNTHETIC_LIMITS.individuals.max, value)));
     onClear();
@@ -221,19 +293,19 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
       <div className="synthetic-equations">
         <h3>Mass balances</h3>
         <div className="synthetic-equation-list">{equations.map((equation) => <Latex key={equation} tex={equation} block />)}</div>
-        <h3>Sampled flux laws</h3>
-        <div className="synthetic-equation-list compact">{uniqueRateForms.map((rate) => <Latex key={rate.id} tex={equationForRate(rate)} block />)}</div>
+        <h3>Flux laws</h3>
+        <div className="synthetic-equation-list compact">{model.kinetics.rates.map((rate) => <Latex key={rate.id} tex={equationForRate(rate)} block />)}</div>
         <p><i>X</i><sub>a</sub> is the amount in compartment a; τ is dimensionless time; J<sub>ab</sub> is flux from a to b; κ is a rate ratio; β and h control saturation; and r(τ) is a positive time-varying rate modulation.</p>
       </div>
     </div>
     <div className="synthetic-parameter-section">
-      <h3>Sampled kinetic parameters</h3>
-      <KineticTable rates={model.kinetics.rates} />
+      <h3>Kinetic parameters</h3>
+      <KineticTable graph={model.graph} rates={model.kinetics.rates} onChange={changeRate} />
     </div>
     <div className="synthetic-protocol">
       <div className="synthetic-protocol-heading">
         <h3>Dose protocol</h3>
-        <label>Schedule
+        <div className="synthetic-schedule-controls"><label>Dose schedule
           <select value={doseCount} onChange={(event) => { setDoseCount(Number(event.target.value)); onClear(); }}>
             <option value={1}>Single dose</option>
             <option value={2}>Multiple doses · 2</option>
@@ -241,8 +313,23 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
             <option value={4}>Multiple doses · 4</option>
           </select>
         </label>
+        <label>Observation schedule
+          <select value={acquisition.family} onChange={(event) => changeAcquisition({ family: event.target.value as SyntheticAcquisition["family"] })}>
+            <option value="exact">Exact scheduled</option>
+            <option value="pseudo_scheduled">Pseudo-scheduled</option>
+            <option value="unscheduled">Unscheduled</option>
+          </select>
+        </label>
+        <label>Time weighting
+          <select value={acquisition.shape} onChange={(event) => changeAcquisition({ shape: event.target.value as SyntheticAcquisition["shape"] })}>
+            <option value="uniform">Uniform</option>
+            <option value="early">Early weighted</option>
+            <option value="late">Late weighted</option>
+            <option value="clustered">Clustered</option>
+          </select>
+        </label></div>
       </div>
-      <DoseTimeline events={activeModel.protocol.events} />
+      <DoseTimeline events={activeModel.protocol.events} observationTimes={observationPreview.times} />
       <div className="synthetic-event-list">{activeModel.protocol.events.map((event, index) => <span key={`${event.time}-${index}`}><b>{event.amount.toFixed(2)}×</b> at τ={event.time.toFixed(2)}{event.duration > 0 ? ` · infusion Δτ=${event.duration.toFixed(2)}` : " · bolus"}</span>)}</div>
     </div>
     <div className="synthetic-generate-controls">

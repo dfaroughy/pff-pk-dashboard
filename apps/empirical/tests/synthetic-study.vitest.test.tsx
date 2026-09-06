@@ -59,12 +59,48 @@ test("clamps public synthetic study controls and emits a generated cohort", asyn
   expect(individuals.valueAsNumber).toBe(16);
   expect(observations.valueAsNumber).toBe(20);
 
-  await user.selectOptions(screen.getByLabelText("Schedule"), "4");
-  expect(screen.getByRole("img", { name: "Dimensionless dose protocol timeline" })).toBeTruthy();
+  await user.selectOptions(screen.getByLabelText("Dose schedule"), "4");
+  expect(screen.getByRole("img", { name: "Dimensionless dose and observation schedule timeline" })).toBeTruthy();
 
   await user.click(screen.getByRole("button", { name: "Generate synthetic data" }));
   expect(onGenerate).toHaveBeenCalledOnce();
   expect(onGenerate.mock.calls[0][0].subjects).toHaveLength(16);
   expect(onGenerate.mock.calls[0][0].subjects[0].points).toHaveLength(20);
   expect(onGenerate.mock.calls[0][0].doseEvents).toHaveLength(4);
+});
+
+test("edits kinetic laws and keeps the rendered equations synchronized", async () => {
+  const user = userEvent.setup();
+  const onClear = vi.fn();
+  render(<SyntheticStudyBuilder onGenerate={vi.fn()} onClear={onClear} />);
+
+  const law = screen.getAllByRole("combobox", { name: /J.+ law/ })[0] as HTMLSelectElement;
+  const flux = law.getAttribute("aria-label")?.replace(" law", "") ?? "";
+  const beta = screen.getByLabelText(`${flux} beta`) as HTMLInputElement;
+  const equations = document.querySelector(".synthetic-equation-list.compact") as HTMLElement;
+
+  await user.selectOptions(law, "saturable");
+  expect(beta.disabled).toBe(false);
+  expect(equations.textContent).toContain("β");
+  expect(onClear).toHaveBeenCalled();
+
+  await user.selectOptions(law, "linear");
+  expect(beta.disabled).toBe(true);
+});
+
+test("uses the selected acquisition scheduler for preview and generation", async () => {
+  const user = userEvent.setup();
+  const onGenerate = vi.fn();
+  render(<SyntheticStudyBuilder onGenerate={onGenerate} onClear={vi.fn()} />);
+
+  await user.selectOptions(screen.getByLabelText("Observation schedule"), "unscheduled");
+  await user.selectOptions(screen.getByLabelText("Time weighting"), "early");
+  await user.click(screen.getByRole("button", { name: "Generate synthetic data" }));
+
+  const study = onGenerate.mock.calls[0][0];
+  expect(study.subjects).toHaveLength(10);
+  expect(study.subjects[0].points.map(([time]: [number, number]) => time)).not.toEqual(
+    study.subjects[1].points.map(([time]: [number, number]) => time),
+  );
+  expect(study.observedVpc).toHaveLength(16);
 });

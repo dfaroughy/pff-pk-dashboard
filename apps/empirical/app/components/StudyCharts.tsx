@@ -94,7 +94,7 @@ export function VpcChart({ study, logY }: { study: Study; logY: boolean }) {
     const upper = study.summary.map((point) => [point.time, point.mean + (point.sd ?? 0)] as Point);
     return <Chart series={[mean]} styles={[{ stroke: "var(--blue)", width: 1, markers: true, radius: 2.2 }]} bands={[{ lower, upper, fill: "var(--blue-summary-fill)" }]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Published concentration summary for ${study.drug}`} />;
   }
-  const vpc = observedVpc(study).filter((point) => point.n >= 2);
+  const vpc = (study.observedVpc ?? observedVpc(study)).filter((point) => point.n >= 2);
   const q05 = vpc.map((point) => [point.time, point.q05] as Point);
   const q50 = vpc.map((point) => [point.time, point.q50] as Point);
   const q95 = vpc.map((point) => [point.time, point.q95] as Point);

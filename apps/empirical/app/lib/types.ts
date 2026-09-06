@@ -21,6 +21,7 @@ export type Study = {
   unitClass: string;
   subjects: Subject[];
   summary: SummaryPoint[];
+  observedVpc?: VpcPoint[];
 };
 
 export type Corpus = { schemaVersion: number; generatedAt: string; studies: Study[] };

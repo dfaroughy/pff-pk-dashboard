@@ -405,6 +405,24 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   </section>;
 }
 
+function InactiveModelPanel() {
+  return <section className="model-panel card inactive-model-panel">
+    <div className="section-heading">
+      <h2>Pythia-PK</h2>
+      <span className="status">Awaiting cohort</span>
+    </div>
+    <label className="model-select">Models
+      <select aria-label="Inactive model selection" value="pythia" disabled><option>Pythia</option></select>
+    </label>
+    <div className="model-controls">
+      <label>Generated individuals <input type="number" value="20" disabled readOnly /></label>
+      <label>Random seed <input type="number" value="43" disabled readOnly /></label>
+    </div>
+    <p className="model-warning">Generate the synthetic cohort to activate zero-shot inference.</p>
+    <div className="inference-actions"><button type="button" className="primary-button inference-progress" disabled><span className="inference-progress-label">Run zero-shot inference</span></button></div>
+  </section>;
+}
+
 function VpcLegend({ result, showStudyContext, empiricalVpc }: {
   result: InferenceResponse | null;
   showStudyContext: boolean;
@@ -508,12 +526,12 @@ export function Dashboard() {
             <div><dt>Matrix</dt><dd>{activeStudy?.medium || (syntheticMode ? "Central compartment" : "Not reported")}</dd></div>
           </dl>
         </section>
-        {syntheticMode ? <section className={syntheticStudy ? "overview-grid synthetic-overview" : "overview-grid synthetic-overview pending"}>
+        {syntheticMode ? <section className="overview-grid synthetic-overview">
           <SyntheticStudyBuilder
             onClear={() => { setSyntheticStudy(null); setModelResult(null); setShowStudyContext(true); }}
             onGenerate={(study) => { setSyntheticStudy(study); setModelResult(null); setShowStudyContext(true); }}
           />
-          {syntheticStudy && <ModelPanel key={syntheticStudy.id} study={syntheticStudy} onResult={setModelResult} />}
+          {syntheticStudy ? <ModelPanel key={syntheticStudy.id} study={syntheticStudy} onResult={setModelResult} /> : <InactiveModelPanel />}
         </section> : <section className="overview-grid">
           <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} /></article>
           <ModelPanel key={selected.id} study={selected} onResult={setModelResult} />

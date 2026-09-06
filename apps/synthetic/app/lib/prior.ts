@@ -410,12 +410,17 @@ function interpolate(tau: number[], values: number[], time: number): number {
   return values[left] * (1 - f) + values[right] * f;
 }
 
-export function acquireMesh(study: StudyDraw, armIndex: number, family: AcquisitionFamily, shape: ScheduleShape, count: number, rng: Rng): MeshView {
+export function sampleAcquisitionTimes(
+  family: AcquisitionFamily,
+  shape: ScheduleShape,
+  count: number,
+  nIndividuals: number,
+  rng: Rng,
+): Pick<MeshView, "times" | "nominalTimes"> {
   const regular = Array.from({ length: 128 }, (_, i) => (i + 1) / 128);
-  const arm = study.arms[armIndex];
   let nominal: number[] | undefined;
   if (family !== "unscheduled") nominal = weightedSampleIndices(regular, count, shape, rng).map((i) => regular[i]);
-  const times = arm.curves.map(() => {
+  const times = Array.from({ length: nIndividuals }, () => {
     if (family === "exact") return [...(nominal ?? [])];
     if (family === "pseudo_scheduled") {
       const source = nominal ?? [];
@@ -424,8 +429,14 @@ export function acquireMesh(study: StudyDraw, armIndex: number, family: Acquisit
     const randomBase = [...Array.from({ length: 127 }, () => Math.max(Number.MIN_VALUE, rng.uniform())), 1].sort((a, b) => a - b);
     return weightedSampleIndices(randomBase, count, shape, rng).map((i) => randomBase[i]);
   });
+  return { times, nominalTimes: nominal };
+}
+
+export function acquireMesh(study: StudyDraw, armIndex: number, family: AcquisitionFamily, shape: ScheduleShape, count: number, rng: Rng): MeshView {
+  const arm = study.arms[armIndex];
+  const { times, nominalTimes } = sampleAcquisitionTimes(family, shape, count, arm.curves.length, rng);
   const values = times.map((row, i) => row.map((time) => interpolate(study.tau, arm.curves[i], time)));
-  return { times, values, nominalTimes: nominal };
+  return { times, values, nominalTimes };
 }
 
 export const PRIOR_FACTS = {
