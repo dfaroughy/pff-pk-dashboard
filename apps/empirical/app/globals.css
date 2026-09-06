@@ -219,6 +219,7 @@ button { cursor: pointer; }
 .synthetic-node { fill: var(--paper); stroke: var(--line-bright); stroke-width: .55; }
 .synthetic-node.central { fill: var(--acid-fill); stroke: var(--acid); }
 .synthetic-node-index { fill: var(--ink); font-family: var(--font-data); font-size: 4.2px; font-weight: 700; text-anchor: middle; text-transform: uppercase; }
+.synthetic-node-index.central { fill: #142015; }
 .synthetic-node-role { fill: var(--muted); font-family: var(--font-data); font-size: 2.25px; font-weight: 600; text-anchor: middle; text-transform: uppercase; }
 .synthetic-flux-label { fill: var(--muted); font-family: var(--font-data); font-size: 2.15px; text-anchor: middle; }
 .synthetic-dose-arrow { stroke: var(--cyan); stroke-width: .55; }
@@ -230,6 +231,7 @@ button { cursor: pointer; }
 .synthetic-facts dd { margin: 4px 0 0; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
 .synthetic-graph-actions { display: flex; justify-content: center; border-top: 1px solid var(--line); padding: 10px 4px 2px; }
 .draw-model-button { border: 1px solid var(--acid-fill); padding: 8px 14px; background: var(--acid-fill); color: #142015; font-family: var(--font-data); font-size: 8px; font-weight: 750; letter-spacing: .045em; text-transform: uppercase; }
+.dashboard-shell[data-theme="dark"] .draw-model-button { color: #142015; }
 .draw-model-button:hover { background: transparent; color: var(--acid); }
 .synthetic-equations { min-width: 0; max-width: 100%; overflow: hidden; padding: 13px 15px; }
 .synthetic-equations h3, .synthetic-parameter-section h3, .synthetic-protocol h3 { margin: 0 0 8px; }

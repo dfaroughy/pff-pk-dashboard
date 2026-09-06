@@ -102,7 +102,7 @@ function CompartmentGraph({ graph }: { graph: GraphDraw }) {
       const label = compartmentSymbol(node.id);
       return <g key={node.id} transform={`translate(${position.x} ${position.y})`}>
         <circle className={node.id === graph.central ? "synthetic-node central" : "synthetic-node"} r="6" />
-        <text className="synthetic-node-index" y="1.6">{label}</text>
+        <text className={node.id === graph.central ? "synthetic-node-index central" : "synthetic-node-index"} y="1.6">{label}</text>
         <text className="synthetic-node-role" y="10">{node.role.replace("_", " ")}</text>
       </g>;
     })}
