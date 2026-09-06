@@ -341,7 +341,7 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
         <input type="number" min={SYNTHETIC_LIMITS.observations.min} max={SYNTHETIC_LIMITS.observations.max} step="1" value={observations} onChange={(event) => changeObservations(Number(event.target.value))} />
         <small>2–20</small>
       </label>
-      <button className="primary-button" type="button" onClick={generate}>Generate synthetic data</button>
+      <button className="primary-button" type="button" onClick={generate}>Generate synthetic cohort</button>
     </div>
   </article>;
 }

@@ -3,10 +3,19 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
+import { SyntheticResultsPlaceholder } from "../app/components/Dashboard";
 import { SyntheticStudyBuilder, balanceEquation } from "../app/components/SyntheticStudyBuilder";
 import { generateSyntheticCohort, sampleSyntheticModel, withDoseCount } from "../app/lib/synthetic-study";
 
 afterEach(cleanup);
+
+test("reserves all synthetic result panels before cohort generation", () => {
+  render(<SyntheticResultsPlaceholder />);
+
+  expect(screen.getByRole("img", { name: "Empty visual predictive check" })).toBeTruthy();
+  expect(screen.getByRole("img", { name: "Empty individual concentration profiles" })).toBeTruthy();
+  expect(screen.getByRole("img", { name: "Empty pharmacokinetic quantity distributions" })).toBeTruthy();
+});
 
 test("generates a deterministic study with the requested bounded shape", () => {
   const model = sampleSyntheticModel(43);
@@ -47,7 +56,7 @@ test("constructs selectable one-to-four-dose protocols inside the unit horizon",
   );
 });
 
-test("clamps public synthetic study controls and emits a generated cohort", async () => {
+test("clamps public synthetic cohort controls and emits a generated cohort", async () => {
   const user = userEvent.setup();
   const onGenerate = vi.fn();
   render(<SyntheticStudyBuilder onGenerate={onGenerate} onClear={vi.fn()} />);
@@ -62,7 +71,7 @@ test("clamps public synthetic study controls and emits a generated cohort", asyn
   await user.selectOptions(screen.getByLabelText("Dose schedule"), "4");
   expect(screen.getByRole("img", { name: "Dimensionless dose and observation schedule timeline" })).toBeTruthy();
 
-  await user.click(screen.getByRole("button", { name: "Generate synthetic data" }));
+  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
   expect(onGenerate).toHaveBeenCalledOnce();
   expect(onGenerate.mock.calls[0][0].subjects).toHaveLength(16);
   expect(onGenerate.mock.calls[0][0].subjects[0].points).toHaveLength(20);
@@ -95,7 +104,7 @@ test("uses the selected acquisition scheduler for preview and generation", async
 
   await user.selectOptions(screen.getByLabelText("Observation schedule"), "unscheduled");
   await user.selectOptions(screen.getByLabelText("Time weighting"), "early");
-  await user.click(screen.getByRole("button", { name: "Generate synthetic data" }));
+  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
 
   const study = onGenerate.mock.calls[0][0];
   expect(study.subjects).toHaveLength(10);

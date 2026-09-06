@@ -142,7 +142,7 @@ export function generateSyntheticCohort(
   return {
     id: `synthetic-v6-${model.seed}-${individuals}-${observations}-${acquisition.family}-${acquisition.shape}`,
     origin: "Synthetic v6",
-    drug: "Synthetic study",
+    drug: "Synthetic cohort",
     administeredDrug: "dimensionless reference compound",
     study: `Interactive v6 prior draw ${model.seed}`,
     source: `Pythia-PK synthetic v6 prior · ${acquisition.family}/${acquisition.shape}`,

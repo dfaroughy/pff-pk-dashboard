@@ -187,7 +187,7 @@ button { cursor: pointer; }
 .study-title dt { margin-bottom: 6px; color: var(--muted); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
 .study-title dd { margin: 0; font-size: 11px; font-weight: 600; text-transform: capitalize; }
 .overview-grid { display: grid; grid-template-columns: minmax(350px, .8fr) minmax(600px, 1.2fr); gap: 10px; margin-top: 10px; }
-.synthetic-overview { grid-template-columns: minmax(600px, 1.7fr) minmax(340px, .7fr); align-items: start; }
+.synthetic-overview { grid-template-columns: minmax(600px, 1.7fr) minmax(340px, .7fr); align-items: start; margin-top: 10px; }
 .description-card { min-width: 0; padding: 18px; }
 .description-card p {
   max-width: 105ch;
@@ -206,10 +206,10 @@ button { cursor: pointer; }
 .synthetic-builder-heading { align-items: center; margin-bottom: 13px; }
 .synthetic-kicker { margin: 0 0 4px; color: var(--cyan); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 .synthetic-redraw { margin: 0; }
-.synthetic-model-grid { display: grid; grid-template-columns: minmax(360px, 1.1fr) minmax(320px, .9fr); gap: 12px; }
+.synthetic-model-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 12px; }
 .synthetic-graph-panel, .synthetic-equations, .synthetic-parameter-section, .synthetic-protocol { border: 1px solid var(--line); background: var(--panel-raised); }
 .synthetic-graph-panel { padding: 8px; }
-.synthetic-graph { display: block; width: 100%; min-height: 280px; overflow: visible; }
+.synthetic-graph { display: block; width: 65%; height: auto; margin: 0 auto; overflow: visible; }
 .synthetic-edge { stroke: var(--muted); stroke-width: .45; fill: none; }
 .synthetic-edge.elimination { stroke: var(--orange); }
 .synthetic-graph marker path { fill: var(--muted); }
@@ -225,12 +225,12 @@ button { cursor: pointer; }
 .synthetic-facts div:first-child { border-left: 0; }
 .synthetic-facts dt, .synthetic-equations h3, .synthetic-parameter-section h3, .synthetic-protocol h3 { color: var(--muted); font-family: var(--font-data); font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .synthetic-facts dd { margin: 4px 0 0; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
-.synthetic-equations { padding: 13px 15px; }
+.synthetic-equations { min-width: 0; max-width: 100%; overflow: hidden; padding: 13px 15px; }
 .synthetic-equations h3, .synthetic-parameter-section h3, .synthetic-protocol h3 { margin: 0 0 8px; }
 .synthetic-equations h3:not(:first-child) { margin-top: 16px; }
-.synthetic-equation-list { display: grid; gap: 2px; max-height: 168px; overflow: auto; border-left: 1px solid var(--line); padding-left: 10px; }
+.synthetic-equation-list { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; max-width: 100%; gap: 2px; max-height: 168px; overflow: auto; border-left: 1px solid var(--line); padding-left: 10px; }
 .synthetic-equation-list.compact { max-height: 94px; }
-.synthetic-latex.block { display: block; overflow-x: auto; color: var(--ink); font-size: 10px; }
+.synthetic-latex.block { display: block; width: 100%; max-width: 100%; overflow-x: auto; color: var(--ink); font-size: 10px; }
 .synthetic-latex.block .katex-display { margin: .32em 0; text-align: left; }
 .synthetic-equations > p { margin: 13px 0 0; color: var(--muted); font-family: Helvetica, Arial, sans-serif; font-size: 9px; line-height: 1.48; }
 .synthetic-parameter-section { margin-top: 12px; padding: 12px 14px; }
@@ -280,6 +280,11 @@ button { cursor: pointer; }
   text-transform: uppercase;
 }
 .results-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.empty-plot { display: grid; aspect-ratio: 1.618 / 1; padding: 30px 22px 52px 62px; }
+.distribution-card .empty-plot { aspect-ratio: 720 / 750; }
+.empty-plot-frame { position: relative; display: grid; place-items: center; border-left: 1px solid var(--line-bright); border-bottom: 1px solid var(--line-bright); background: repeating-linear-gradient(to bottom, transparent 0, transparent calc(25% - 1px), var(--line) 25%); }
+.empty-plot-frame::after { position: absolute; inset: auto 0 -1px; height: 1px; background: var(--line-bright); content: ""; }
+.empty-plot-frame span { color: var(--faint); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 .card { border: 1px solid var(--line); border-radius: 0; background: var(--paper); box-shadow: none; }
 .chart-card { min-width: 0; padding: 16px 16px 10px; }
 .card-heading, .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 6px; }

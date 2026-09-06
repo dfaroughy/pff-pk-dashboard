@@ -124,7 +124,7 @@ function StudySelector({ studies, selected, syntheticActive, onSelect, onUpload,
   return <aside className="study-browser">
     <div className="browser-header">
       <button className="custom-dataset-button" type="button" onClick={onUpload}>Upload dataset</button>
-      <button className={syntheticActive ? "synthetic-data-button active" : "synthetic-data-button"} type="button" aria-pressed={syntheticActive} onClick={onSynthetic}>Synthetic data</button>
+      <button className={syntheticActive ? "synthetic-data-button active" : "synthetic-data-button"} type="button" aria-pressed={syntheticActive} onClick={onSynthetic}>Synthetic cohort</button>
     </div>
     <div className="drug-list">
       {studies.map((study) => <button className={!syntheticActive && study.id === selected.id ? "drug-name active" : "drug-name"} type="button" key={study.id} onClick={() => onSelect(study)}>{studyLabel(study, studies)}</button>)}
@@ -423,6 +423,22 @@ function InactiveModelPanel() {
   </section>;
 }
 
+export function SyntheticResultsPlaceholder() {
+  const panels = [
+    { title: "VPC", label: "Empty visual predictive check" },
+    { title: "Individuals", label: "Empty individual concentration profiles" },
+    { title: "PK quantities", label: "Empty pharmacokinetic quantity distributions" },
+  ];
+  return <section className="results-grid synthetic-results-placeholder">
+    {panels.map((panel, index) => <article className={index === 2 ? "card chart-card distribution-card" : "card chart-card"} key={panel.title}>
+      <div className="card-heading"><h2>{panel.title}</h2></div>
+      <div className="empty-plot" role="img" aria-label={panel.label}>
+        <div className="empty-plot-frame"><span>Generate cohort</span></div>
+      </div>
+    </article>)}
+  </section>;
+}
+
 function VpcLegend({ result, showStudyContext, empiricalVpc }: {
   result: InferenceResponse | null;
   showStudyContext: boolean;
@@ -518,7 +534,7 @@ export function Dashboard() {
       />
       <main className="content">
         <section className="study-title">
-          <h1>{syntheticMode ? "Synthetic study" : selected.drug}</h1>
+          <h1>{syntheticMode ? "Synthetic cohort" : selected.drug}</h1>
           <dl>
             <div><dt>Route</dt><dd>{activeStudy?.route ?? "Sampled with model"}</dd></div>
             <div><dt>Dose</dt><dd>{activeStudy ? (activeStudy.dose === null ? "Not reported" : `${format(activeStudy.dose)} ${activeStudy.doseUnit}`) : "Dimensionless"}</dd></div>
@@ -526,18 +542,8 @@ export function Dashboard() {
             <div><dt>Matrix</dt><dd>{activeStudy?.medium || (syntheticMode ? "Central compartment" : "Not reported")}</dd></div>
           </dl>
         </section>
-        {syntheticMode ? <section className="overview-grid synthetic-overview">
-          <SyntheticStudyBuilder
-            onClear={() => { setSyntheticStudy(null); setModelResult(null); setShowStudyContext(true); }}
-            onGenerate={(study) => { setSyntheticStudy(study); setModelResult(null); setShowStudyContext(true); }}
-          />
-          {syntheticStudy ? <ModelPanel key={syntheticStudy.id} study={syntheticStudy} onResult={setModelResult} /> : <InactiveModelPanel />}
-        </section> : <section className="overview-grid">
-          <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} /></article>
-          <ModelPanel key={selected.id} study={selected} onResult={setModelResult} />
-        </section>}
-        {activeStudy && <>
-          <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
+        <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
+        {activeStudy ? <>
           <section className="results-grid">
             <article className="card chart-card">
               <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} showStudyContext={showStudyContext} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
@@ -553,7 +559,17 @@ export function Dashboard() {
               <PkDistributionChart study={activeStudy} result={modelResult} />
             </article>
           </section>
-        </>}
+        </> : <SyntheticResultsPlaceholder />}
+        {syntheticMode ? <section className="overview-grid synthetic-overview">
+          <SyntheticStudyBuilder
+            onClear={() => { setSyntheticStudy(null); setModelResult(null); setShowStudyContext(true); }}
+            onGenerate={(study) => { setSyntheticStudy(study); setModelResult(null); setShowStudyContext(true); }}
+          />
+          {syntheticStudy ? <ModelPanel key={syntheticStudy.id} study={syntheticStudy} onResult={setModelResult} /> : <InactiveModelPanel />}
+        </section> : <section className="overview-grid">
+          <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} /></article>
+          <ModelPanel key={selected.id} study={selected} onResult={setModelResult} />
+        </section>}
       </main>
     </div>
     {uploadOpen && <DatasetUploadDialog onClose={() => setUploadOpen(false)} onStudy={(study) => {
