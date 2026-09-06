@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import katex from "katex";
 import type { Study } from "../lib/types";
 import {
@@ -12,6 +12,8 @@ import {
 } from "../lib/synthetic-study";
 import type { DoseEvent, GraphDraw, RateDraw } from "../../../synthetic/app/lib/prior";
 
+const INITIAL_MODEL_SEED = 46;
+
 function Latex({ tex, block = false }: { tex: string; block?: boolean }) {
   return <span
     className={block ? "synthetic-latex block" : "synthetic-latex"}
@@ -19,6 +21,18 @@ function Latex({ tex, block = false }: { tex: string; block?: boolean }) {
       __html: katex.renderToString(tex, { displayMode: block, throwOnError: false, strict: false }),
     }}
   />;
+}
+
+function CollapsibleSection({ title, open, onToggle, children }: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return <section className={open ? "synthetic-accordion open" : "synthetic-accordion"}>
+    <h3><button type="button" aria-expanded={open} onClick={onToggle}><span>{title}</span><i aria-hidden="true">{open ? "−" : "+"}</i></button></h3>
+    {open && <div className="synthetic-accordion-content">{children}</div>}
+  </section>;
 }
 
 function compartmentSymbol(id: number) {
@@ -227,27 +241,45 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
   onClear: () => void;
 }) {
   const [modelIndex, setModelIndex] = useState(0);
-  const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(43));
+  const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(INITIAL_MODEL_SEED));
   const [doseCount, setDoseCount] = useState(1);
+  const [doseOverrides, setDoseOverrides] = useState<Record<number, number>>({});
   const [acquisition, setAcquisition] = useState<SyntheticAcquisition>({ family: "exact", shape: "uniform" });
+  const [gridDraw, setGridDraw] = useState(0);
+  const [openSections, setOpenSections] = useState({ graph: true, kinetics: false, protocol: false });
   const [individuals, setIndividuals] = useState(SYNTHETIC_LIMITS.individuals.default);
   const [observations, setObservations] = useState(SYNTHETIC_LIMITS.observations.default);
-  const activeModel = useMemo(() => withDoseCount(model, doseCount), [doseCount, model]);
+  const activeModel = useMemo(() => {
+    const counted = withDoseCount(model, doseCount);
+    return {
+      ...counted,
+      protocol: {
+        ...counted.protocol,
+        events: counted.protocol.events.map((event, index) => ({
+          ...event,
+          amount: doseOverrides[index] ?? event.amount,
+        })),
+      },
+    };
+  }, [doseCount, doseOverrides, model]);
   const observationPreview = useMemo(() => previewSyntheticObservationTimes(
     model.seed,
     Math.min(individuals, 8),
     observations,
     acquisition,
-  ), [acquisition, individuals, model.seed, observations]);
+    gridDraw,
+  ), [acquisition, gridDraw, individuals, model.seed, observations]);
   const equations = useMemo(() => model.graph.nodes.map((node) => balanceEquation(model.graph, node.id)), [model.graph]);
 
   const drawModel = () => {
     const nextIndex = modelIndex + 1;
     setModelIndex(nextIndex);
-    setModel(sampleSyntheticModel(43 + nextIndex));
+    setModel(sampleSyntheticModel(INITIAL_MODEL_SEED + nextIndex));
+    setDoseOverrides({});
+    setGridDraw(0);
     onClear();
   };
-  const generate = () => onGenerate(generateSyntheticCohort(activeModel, individuals, observations, acquisition));
+  const generate = () => onGenerate(generateSyntheticCohort(activeModel, individuals, observations, acquisition, gridDraw));
   const changeRate = (id: string, patch: Partial<RateDraw>) => {
     setModel((current) => {
       const rates = current.kinetics.rates.map((rate) => rate.id === id ? { ...rate, ...patch } : rate);
@@ -264,7 +296,19 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
   };
   const changeAcquisition = (patch: Partial<SyntheticAcquisition>) => {
     setAcquisition((current) => ({ ...current, ...patch }));
+    setGridDraw(0);
     onClear();
+  };
+  const changeDose = (index: number, amount: number) => {
+    setDoseOverrides((current) => ({ ...current, [index]: amount }));
+    onClear();
+  };
+  const resampleGrid = () => {
+    setGridDraw((current) => current + 1);
+    onClear();
+  };
+  const toggleSection = (section: keyof typeof openSections) => {
+    setOpenSections((current) => ({ ...current, [section]: !current[section] }));
   };
   const changeIndividuals = (value: number) => {
     setIndividuals(Math.max(SYNTHETIC_LIMITS.individuals.min, Math.min(SYNTHETIC_LIMITS.individuals.max, value)));
@@ -277,60 +321,68 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
 
   return <article className="card synthetic-builder">
     <div className="section-heading synthetic-builder-heading">
-      <div><p className="synthetic-kicker">Interactive prior draw · seed {model.seed}</p><h2>Compartment model</h2></div>
+      <div><p className="synthetic-kicker">Interactive prior draw · seed {model.seed}</p><h2>Synthetic cohort model</h2></div>
       <button className="secondary-button synthetic-redraw" type="button" onClick={drawModel}>Draw another model</button>
     </div>
-    <div className="synthetic-model-grid">
-      <div className="synthetic-graph-panel">
-        <CompartmentGraph graph={model.graph} />
-        <dl className="synthetic-facts">
-          <div><dt>Route</dt><dd>{model.graph.route}</dd></div>
-          <div><dt>Compartments</dt><dd>{model.graph.nodes.length}</dd></div>
-          <div><dt>Fluxes</dt><dd>{model.kinetics.rates.length}</dd></div>
-          <div><dt>Protocol</dt><dd>{activeModel.protocol.pattern}</dd></div>
-        </dl>
-      </div>
-      <div className="synthetic-equations">
-        <h3>Mass balances</h3>
-        <div className="synthetic-equation-list">{equations.map((equation) => <Latex key={equation} tex={equation} block />)}</div>
-        <h3>Flux laws</h3>
-        <div className="synthetic-equation-list compact">{model.kinetics.rates.map((rate) => <Latex key={rate.id} tex={equationForRate(rate)} block />)}</div>
-        <p><i>X</i><sub>a</sub> is the amount in compartment a; τ is dimensionless time; J<sub>ab</sub> is flux from a to b; κ is a rate ratio; β and h control saturation; and r(τ) is a positive time-varying rate modulation.</p>
-      </div>
-    </div>
-    <div className="synthetic-parameter-section">
-      <h3>Kinetic parameters</h3>
-      <KineticTable graph={model.graph} rates={model.kinetics.rates} onChange={changeRate} />
-    </div>
-    <div className="synthetic-protocol">
-      <div className="synthetic-protocol-heading">
-        <h3>Dose protocol</h3>
-        <div className="synthetic-schedule-controls"><label>Dose schedule
-          <select value={doseCount} onChange={(event) => { setDoseCount(Number(event.target.value)); onClear(); }}>
-            <option value={1}>Single dose</option>
-            <option value={2}>Multiple doses · 2</option>
-            <option value={3}>Multiple doses · 3</option>
-            <option value={4}>Multiple doses · 4</option>
-          </select>
-        </label>
-        <label>Observation schedule
-          <select value={acquisition.family} onChange={(event) => changeAcquisition({ family: event.target.value as SyntheticAcquisition["family"] })}>
-            <option value="exact">Exact scheduled</option>
-            <option value="pseudo_scheduled">Pseudo-scheduled</option>
-            <option value="unscheduled">Unscheduled</option>
-          </select>
-        </label>
-        <label>Time weighting
-          <select value={acquisition.shape} onChange={(event) => changeAcquisition({ shape: event.target.value as SyntheticAcquisition["shape"] })}>
-            <option value="uniform">Uniform</option>
-            <option value="early">Early weighted</option>
-            <option value="late">Late weighted</option>
-            <option value="clustered">Clustered</option>
-          </select>
-        </label></div>
-      </div>
-      <DoseTimeline events={activeModel.protocol.events} observationTimes={observationPreview.times} />
-      <div className="synthetic-event-list">{activeModel.protocol.events.map((event, index) => <span key={`${event.time}-${index}`}><b>{event.amount.toFixed(2)}×</b> at τ={event.time.toFixed(2)}{event.duration > 0 ? ` · infusion Δτ=${event.duration.toFixed(2)}` : " · bolus"}</span>)}</div>
+    <div className="synthetic-accordion-stack">
+      <CollapsibleSection title="Compartment graph" open={openSections.graph} onToggle={() => toggleSection("graph")}>
+        <div className="synthetic-model-grid">
+          <div className="synthetic-graph-panel">
+            <CompartmentGraph graph={model.graph} />
+            <dl className="synthetic-facts">
+              <div><dt>Route</dt><dd>{model.graph.route}</dd></div>
+              <div><dt>Compartments</dt><dd>{model.graph.nodes.length}</dd></div>
+              <div><dt>Fluxes</dt><dd>{model.kinetics.rates.length}</dd></div>
+              <div><dt>Protocol</dt><dd>{activeModel.protocol.pattern}</dd></div>
+            </dl>
+          </div>
+          <div className="synthetic-equations">
+            <h3>Mass balances</h3>
+            <div className="synthetic-equation-list">{equations.map((equation) => <Latex key={equation} tex={equation} block />)}</div>
+            <h3>Flux laws</h3>
+            <div className="synthetic-equation-list compact">{model.kinetics.rates.map((rate) => <Latex key={rate.id} tex={equationForRate(rate)} block />)}</div>
+            <p><i>X</i><sub>a</sub> is the amount in compartment a; τ is dimensionless time; J<sub>ab</sub> is flux from a to b; κ is a rate ratio; β and h control saturation; and r(τ) is a positive time-varying rate modulation.</p>
+          </div>
+        </div>
+      </CollapsibleSection>
+      <CollapsibleSection title="Kinetic parameters" open={openSections.kinetics} onToggle={() => toggleSection("kinetics")}>
+        <KineticTable graph={model.graph} rates={model.kinetics.rates} onChange={changeRate} />
+      </CollapsibleSection>
+      <CollapsibleSection title="Dose and observation protocol" open={openSections.protocol} onToggle={() => toggleSection("protocol")}>
+        <div className="synthetic-protocol-heading">
+          <div className="synthetic-schedule-controls"><label>Dose schedule
+            <select value={doseCount} onChange={(event) => { setDoseCount(Number(event.target.value)); onClear(); }}>
+              <option value={1}>Single dose</option>
+              <option value={2}>Multiple doses · 2</option>
+              <option value={3}>Multiple doses · 3</option>
+              <option value={4}>Multiple doses · 4</option>
+            </select>
+          </label>
+          <label>Observation schedule
+            <select value={acquisition.family} onChange={(event) => changeAcquisition({ family: event.target.value as SyntheticAcquisition["family"] })}>
+              <option value="exact">Exact scheduled</option>
+              <option value="pseudo_scheduled">Pseudo-scheduled</option>
+              <option value="unscheduled">Unscheduled</option>
+            </select>
+          </label>
+          <label>Time weighting
+            <select value={acquisition.shape} onChange={(event) => changeAcquisition({ shape: event.target.value as SyntheticAcquisition["shape"] })}>
+              <option value="uniform">Uniform</option>
+              <option value="early">Early weighted</option>
+              <option value="late">Late weighted</option>
+              <option value="clustered">Clustered</option>
+            </select>
+          </label>
+          <button className="secondary-button grid-resample" type="button" onClick={resampleGrid}>Resample observation grid</button></div>
+        </div>
+        <DoseTimeline events={activeModel.protocol.events} observationTimes={observationPreview.times} />
+        <div className="synthetic-dose-editor">{activeModel.protocol.events.map((event, index) => <div className="synthetic-dose-row" key={`dose-${index}`}>
+          <span>Dose {index + 1}</span>
+          <span className="synthetic-dose-input">Relative amount <ParameterInput label={`Dose ${index + 1} relative amount`} value={event.amount} min={0.001} onCommit={(value) => changeDose(index, value)} /></span>
+          <span>τ = {event.time.toFixed(3)}</span>
+          <span>{event.duration > 0 ? `infusion · Δτ=${event.duration.toFixed(3)}` : "bolus"}</span>
+        </div>)}</div>
+      </CollapsibleSection>
     </div>
     <div className="synthetic-generate-controls">
       <label>Individuals

@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { SyntheticResultsPlaceholder } from "../app/components/Dashboard";
 import { SyntheticStudyBuilder, balanceEquation } from "../app/components/SyntheticStudyBuilder";
-import { generateSyntheticCohort, sampleSyntheticModel, withDoseCount } from "../app/lib/synthetic-study";
+import { generateSyntheticCohort, previewSyntheticObservationTimes, sampleSyntheticModel, withDoseCount } from "../app/lib/synthetic-study";
 
 afterEach(cleanup);
 
@@ -68,6 +68,9 @@ test("clamps public synthetic cohort controls and emits a generated cohort", asy
   expect(individuals.valueAsNumber).toBe(16);
   expect(observations.valueAsNumber).toBe(20);
 
+  expect(screen.getByText("Interactive prior draw · seed 46")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Compartment graph" }).getAttribute("aria-expanded")).toBe("true");
+  await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
   await user.selectOptions(screen.getByLabelText("Dose schedule"), "4");
   expect(screen.getByRole("img", { name: "Dimensionless dose and observation schedule timeline" })).toBeTruthy();
 
@@ -83,6 +86,7 @@ test("edits kinetic laws and keeps the rendered equations synchronized", async (
   const onClear = vi.fn();
   render(<SyntheticStudyBuilder onGenerate={vi.fn()} onClear={onClear} />);
 
+  await user.click(screen.getByRole("button", { name: "Kinetic parameters" }));
   const law = screen.getAllByRole("combobox", { name: /J.+ law/ })[0] as HTMLSelectElement;
   const flux = law.getAttribute("aria-label")?.replace(" law", "") ?? "";
   const beta = screen.getByLabelText(`${flux} beta`) as HTMLInputElement;
@@ -102,6 +106,7 @@ test("uses the selected acquisition scheduler for preview and generation", async
   const onGenerate = vi.fn();
   render(<SyntheticStudyBuilder onGenerate={onGenerate} onClear={vi.fn()} />);
 
+  await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
   await user.selectOptions(screen.getByLabelText("Observation schedule"), "unscheduled");
   await user.selectOptions(screen.getByLabelText("Time weighting"), "early");
   await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
@@ -112,4 +117,31 @@ test("uses the selected acquisition scheduler for preview and generation", async
     study.subjects[1].points.map(([time]: [number, number]) => time),
   );
   expect(study.observedVpc).toHaveLength(16);
+});
+
+test("resamples the observation grid and uses the previewed mesh for generation", () => {
+  const model = sampleSyntheticModel(46);
+  const acquisition = { family: "exact", shape: "uniform" } as const;
+  const first = previewSyntheticObservationTimes(46, 10, 16, acquisition, 0);
+  const second = previewSyntheticObservationTimes(46, 10, 16, acquisition, 1);
+  const study = generateSyntheticCohort(model, 10, 16, acquisition, 1);
+
+  expect(second.times).not.toEqual(first.times);
+  expect(study.subjects[0].points.map(([time]) => time)).toEqual(second.times[0]);
+});
+
+test("accepts a user-defined relative dose", async () => {
+  const user = userEvent.setup();
+  const onGenerate = vi.fn();
+  render(<SyntheticStudyBuilder onGenerate={onGenerate} onClear={vi.fn()} />);
+
+  await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
+  const dose = screen.getByLabelText("Dose 1 relative amount") as HTMLInputElement;
+  expect(dose.valueAsNumber).toBe(1);
+  await user.clear(dose);
+  await user.type(dose, "2.5");
+  await user.tab();
+  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
+
+  expect(onGenerate.mock.calls[0][0].doseEvents[0].amount).toBe(2.5);
 });

@@ -59,10 +59,10 @@ function meshVpc(times: number[][], values: number[][]): VpcPoint[] {
   });
 }
 
-function acquisitionSeed(modelSeed: number, observations: number, acquisition: SyntheticAcquisition) {
+function acquisitionSeed(modelSeed: number, observations: number, acquisition: SyntheticAcquisition, gridDraw: number) {
   const familyCode = { exact: 0x101, pseudo_scheduled: 0x202, unscheduled: 0x303 }[acquisition.family];
   const shapeCode = { uniform: 0x11, early: 0x22, late: 0x33, clustered: 0x44 }[acquisition.shape];
-  return (modelSeed ^ (observations * 0x45d9f3b) ^ familyCode ^ shapeCode) >>> 0;
+  return (modelSeed ^ (observations * 0x45d9f3b) ^ Math.imul(gridDraw + 1, 0x27d4eb2d) ^ familyCode ^ shapeCode) >>> 0;
 }
 
 export function sampleSyntheticModel(seed: number): SyntheticModelDraw {
@@ -120,6 +120,7 @@ export function generateSyntheticCohort(
   nIndividuals: number,
   nObservations: number,
   acquisition: SyntheticAcquisition = { family: "exact", shape: "uniform" },
+  gridDraw = 0,
 ): Study {
   const individuals = boundedInteger(
     nIndividuals,
@@ -135,12 +136,12 @@ export function generateSyntheticCohort(
   const cohort = sampleCohort(model.graph, model.kinetics, rng, individuals);
   const complete = generateStudy(model.graph, model.kinetics, model.protocol, cohort, rng);
   const referenceArm = complete.arms[0];
-  const meshRng = new Rng(acquisitionSeed(model.seed, observations, acquisition));
+  const meshRng = new Rng(acquisitionSeed(model.seed, observations, acquisition, gridDraw));
   const mesh = acquireMesh(complete, 0, acquisition.family, acquisition.shape, observations, meshRng);
   const doseUnit = "relative dose";
 
   return {
-    id: `synthetic-v6-${model.seed}-${individuals}-${observations}-${acquisition.family}-${acquisition.shape}`,
+    id: `synthetic-v6-${model.seed}-${individuals}-${observations}-${acquisition.family}-${acquisition.shape}-${gridDraw}`,
     origin: "Synthetic v6",
     drug: "Synthetic cohort",
     administeredDrug: "dimensionless reference compound",
@@ -174,6 +175,7 @@ export function previewSyntheticObservationTimes(
   nIndividuals: number,
   nObservations: number,
   acquisition: SyntheticAcquisition,
+  gridDraw = 0,
 ) {
   const individuals = boundedInteger(nIndividuals, 1, SYNTHETIC_LIMITS.individuals.max);
   const observations = boundedInteger(
@@ -186,6 +188,6 @@ export function previewSyntheticObservationTimes(
     acquisition.shape,
     observations,
     individuals,
-    new Rng(acquisitionSeed(modelSeed, observations, acquisition)),
+    new Rng(acquisitionSeed(modelSeed, observations, acquisition, gridDraw)),
   );
 }
