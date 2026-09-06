@@ -4,6 +4,7 @@ import "@fontsource-variable/space-grotesk";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/600.css";
+import "katex/dist/katex.min.css";
 import "../app/globals.css";
 import { Dashboard } from "../app/components/Dashboard";
 

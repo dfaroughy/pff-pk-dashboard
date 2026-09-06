@@ -138,19 +138,12 @@ button { cursor: pointer; }
   font-weight: 550;
   letter-spacing: -.03em;
 }
-.browser-header input {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 0;
-  padding: 8px 9px;
-  background: var(--panel-raised);
-  color: var(--ink);
-  outline: none;
-}
 .custom-dataset-button { width: 100%; border: 1px solid var(--acid); padding: 8px 10px; background: var(--acid-fill); color: #142015; font-family: var(--font-data); font-size: 9px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
 .custom-dataset-button::before { content: "+ "; }
 .custom-dataset-button:hover { background: transparent; color: var(--acid); }
-.browser-header input:focus { border-color: var(--cyan); }
+.synthetic-data-button { width: 100%; border: 1px solid var(--line-bright); padding: 8px 10px; background: var(--panel-raised); color: var(--ink); font-family: var(--font-data); font-size: 9px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
+.synthetic-data-button::before { content: "+ "; }
+.synthetic-data-button:hover, .synthetic-data-button.active { border-color: var(--cyan); color: var(--cyan); }
 .drug-list { overflow: auto; padding: 5px 7px 48px; }
 .empty-catalogue { margin: 10px; border: 1px dashed var(--line-bright); padding: 13px; color: var(--muted); font-family: var(--font-data); font-size: 9px; text-align: center; }
 .drug-name {
@@ -194,6 +187,8 @@ button { cursor: pointer; }
 .study-title dt { margin-bottom: 6px; color: var(--muted); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
 .study-title dd { margin: 0; font-size: 11px; font-weight: 600; text-transform: capitalize; }
 .overview-grid { display: grid; grid-template-columns: minmax(350px, .8fr) minmax(600px, 1.2fr); gap: 10px; margin-top: 10px; }
+.synthetic-overview { grid-template-columns: minmax(600px, 1.7fr) minmax(340px, .7fr); align-items: start; }
+.synthetic-overview.pending { grid-template-columns: 1fr; }
 .description-card { min-width: 0; padding: 18px; }
 .description-card p {
   max-width: 105ch;
@@ -207,6 +202,53 @@ button { cursor: pointer; }
 .description-card .description-loading { color: var(--muted); }
 .description-card a { display: inline-block; margin-top: 12px; color: var(--cyan); font-family: var(--font-data); font-size: 8px; text-decoration: none; }
 .description-card a:hover { text-decoration: underline; }
+
+.synthetic-builder { min-width: 0; padding: 18px; }
+.synthetic-builder-heading { align-items: center; margin-bottom: 13px; }
+.synthetic-kicker { margin: 0 0 4px; color: var(--cyan); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.synthetic-redraw { margin: 0; }
+.synthetic-model-grid { display: grid; grid-template-columns: minmax(360px, 1.1fr) minmax(320px, .9fr); gap: 12px; }
+.synthetic-graph-panel, .synthetic-equations, .synthetic-parameter-section, .synthetic-protocol { border: 1px solid var(--line); background: var(--panel-raised); }
+.synthetic-graph-panel { padding: 8px; }
+.synthetic-graph { display: block; width: 100%; min-height: 280px; overflow: visible; }
+.synthetic-edge { stroke: var(--muted); stroke-width: .45; fill: none; }
+.synthetic-edge.elimination { stroke: var(--orange); }
+.synthetic-graph marker path { fill: var(--muted); }
+.synthetic-node { fill: var(--paper); stroke: var(--line-bright); stroke-width: .55; }
+.synthetic-node.central { fill: var(--acid-fill); stroke: var(--acid); }
+.synthetic-node-index { fill: var(--ink); font-family: var(--font-data); font-size: 4.2px; font-weight: 700; text-anchor: middle; text-transform: uppercase; }
+.synthetic-node-role { fill: var(--muted); font-family: var(--font-data); font-size: 2.25px; font-weight: 600; text-anchor: middle; text-transform: uppercase; }
+.synthetic-flux-label { fill: var(--muted); font-family: var(--font-data); font-size: 2.15px; text-anchor: middle; }
+.synthetic-dose-arrow { stroke: var(--cyan); stroke-width: .55; }
+.synthetic-dose-label { fill: var(--cyan); font-family: var(--font-data); font-size: 2.4px; font-weight: 600; text-anchor: middle; text-transform: uppercase; }
+.synthetic-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 2px 0 0; border-top: 1px solid var(--line); }
+.synthetic-facts div { min-width: 0; padding: 9px 7px 2px; border-left: 1px solid var(--line); }
+.synthetic-facts div:first-child { border-left: 0; }
+.synthetic-facts dt, .synthetic-equations h3, .synthetic-parameter-section h3, .synthetic-protocol h3 { color: var(--muted); font-family: var(--font-data); font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.synthetic-facts dd { margin: 4px 0 0; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
+.synthetic-equations { padding: 13px 15px; }
+.synthetic-equations h3, .synthetic-parameter-section h3, .synthetic-protocol h3 { margin: 0 0 8px; }
+.synthetic-equations h3:not(:first-child) { margin-top: 16px; }
+.synthetic-equation-list { display: grid; gap: 2px; max-height: 168px; overflow: auto; border-left: 1px solid var(--line); padding-left: 10px; }
+.synthetic-equation-list.compact { max-height: 94px; }
+.synthetic-latex.block { display: block; overflow-x: auto; color: var(--ink); font-size: 10px; }
+.synthetic-latex.block .katex-display { margin: .32em 0; text-align: left; }
+.synthetic-equations > p { margin: 13px 0 0; color: var(--muted); font-family: Helvetica, Arial, sans-serif; font-size: 9px; line-height: 1.48; }
+.synthetic-parameter-section { margin-top: 12px; padding: 12px 14px; }
+.synthetic-table-wrap { max-height: 180px; overflow: auto; }
+.synthetic-parameter-table { width: 100%; border-collapse: collapse; color: var(--ink); font-family: var(--font-data); font-size: 8px; }
+.synthetic-parameter-table th { position: sticky; top: 0; padding: 5px 7px; border-bottom: 1px solid var(--line-bright); background: var(--panel-raised); color: var(--muted); font-weight: 650; text-align: left; text-transform: uppercase; }
+.synthetic-parameter-table td { padding: 5px 7px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.synthetic-protocol { margin-top: 12px; padding: 12px 14px; }
+.synthetic-event-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.synthetic-event-list span { border: 1px solid var(--line); padding: 6px 8px; color: var(--muted); font-family: var(--font-data); font-size: 8px; }
+.synthetic-event-list b { color: var(--cyan); }
+.synthetic-generate-controls { display: grid; grid-template-columns: minmax(130px, .55fr) minmax(180px, .75fr) minmax(220px, 1fr); gap: 8px; align-items: end; margin-top: 12px; }
+.synthetic-generate-controls label { color: var(--muted); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.synthetic-generate-controls input { display: block; width: 100%; margin-top: 4px; border: 1px solid var(--line-bright); border-radius: 0; padding: 8px; background: var(--paper); color: var(--ink); font-family: var(--font-data); }
+.synthetic-generate-controls input:focus { border-color: var(--cyan); outline: none; }
+.synthetic-generate-controls small { display: block; margin-top: 3px; color: var(--faint); font-size: 7px; letter-spacing: 0; text-transform: none; }
+.synthetic-generate-controls .primary-button { min-height: 34px; }
 .toolbar {
   display: flex;
   align-items: center;
@@ -337,6 +379,7 @@ button { cursor: pointer; }
 
 @media (max-width: 1350px) {
   .overview-grid { grid-template-columns: 1fr; }
+  .synthetic-model-grid { grid-template-columns: 1fr; }
   .results-grid { grid-template-columns: 1fr 1fr; }
   .results-grid .distribution-card { grid-column: 1 / -1; }
   .study-title { display: block; }
@@ -356,6 +399,9 @@ button { cursor: pointer; }
   .dose-event { grid-template-columns: 25px 1fr 1fr 24px; }
   .dose-event .unit { display: none; }
   .protocol-actions { flex-wrap: wrap; }
+  .synthetic-generate-controls { grid-template-columns: 1fr 1fr; }
+  .synthetic-generate-controls .primary-button { grid-column: 1 / -1; }
+  .synthetic-facts { grid-template-columns: 1fr 1fr; }
   .toolbar { align-items: flex-start; gap: 10px; }
   .chart-actions { align-items: flex-end; flex-direction: column; gap: 5px; }
 }

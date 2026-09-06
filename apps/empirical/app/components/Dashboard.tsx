@@ -7,6 +7,7 @@ import { MAX_UPLOAD_BYTES, parsePkDataset, type UploadRoute } from "../lib/pk-up
 import { dashboardRuntimeConfig } from "../lib/runtime-config";
 import type { Corpus, Study } from "../lib/types";
 import { ModelTrajectoryChart, ModelVpcChart, PkDistributionChart, TrajectoryChart, VpcChart } from "./StudyCharts";
+import { SyntheticStudyBuilder } from "./SyntheticStudyBuilder";
 
 type WikipediaIntro = { paragraph: string; title: string; url: string };
 
@@ -112,25 +113,21 @@ export function studyLabel(study: Study, studies: Study[]) {
   return `${study.drug} — ${dose}`;
 }
 
-function StudySelector({ studies, selected, onSelect, onUpload }: {
+function StudySelector({ studies, selected, syntheticActive, onSelect, onUpload, onSynthetic }: {
   studies: Study[];
   selected: Study;
+  syntheticActive: boolean;
   onSelect: (study: Study) => void;
   onUpload: () => void;
+  onSynthetic: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const visibleStudies = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return studies.filter((study) => studyLabel(study, studies).toLowerCase().includes(needle));
-  }, [query, studies]);
   return <aside className="study-browser">
     <div className="browser-header">
       <button className="custom-dataset-button" type="button" onClick={onUpload}>Upload dataset</button>
-      <input aria-label="Search drugs" placeholder="Search" value={query} onChange={(event) => setQuery(event.target.value)} />
+      <button className={syntheticActive ? "synthetic-data-button active" : "synthetic-data-button"} type="button" aria-pressed={syntheticActive} onClick={onSynthetic}>Synthetic data</button>
     </div>
     <div className="drug-list">
-      {visibleStudies.map((study) => <button className={study.id === selected.id ? "drug-name active" : "drug-name"} type="button" key={study.id} onClick={() => onSelect(study)}>{studyLabel(study, studies)}</button>)}
-      {!visibleStudies.length && <p className="empty-catalogue">No matches</p>}
+      {studies.map((study) => <button className={!syntheticActive && study.id === selected.id ? "drug-name active" : "drug-name"} type="button" key={study.id} onClick={() => onSelect(study)}>{studyLabel(study, studies)}</button>)}
     </div>
   </aside>;
 }
@@ -454,6 +451,8 @@ export function Dashboard() {
   const [corpus, setCorpus] = useState<Corpus | null>(null);
   const [customStudy, setCustomStudy] = useState<Study | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [syntheticMode, setSyntheticMode] = useState(false);
+  const [syntheticStudy, setSyntheticStudy] = useState<Study | null>(null);
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
   const [vpcLogY, setVpcLogY] = useState(false);
   const [trajectoryLogY, setTrajectoryLogY] = useState(false);
@@ -464,7 +463,8 @@ export function Dashboard() {
   if (!corpus) return <main className="loading"><div className="loading-mark" />Loading PK catalogue…</main>;
   const studies = customStudy ? [customStudy, ...corpus.studies] : corpus.studies;
   const selected = studies.find((study) => study.id === selectedId) ?? studies[0];
-  const empiricalVpc = selected.subjects.length > 0;
+  const activeStudy = syntheticMode ? syntheticStudy : selected;
+  const empiricalVpc = (activeStudy?.subjects.length ?? 0) > 0;
   const modelLabel = modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
   return <div className="dashboard-shell" data-theme={darkMode ? "dark" : "light"}>
     <header className="topbar">
@@ -474,36 +474,67 @@ export function Dashboard() {
       </div>
     </header>
     <div className="workspace">
-      <StudySelector studies={studies} selected={selected} onUpload={() => setUploadOpen(true)} onSelect={(study) => { setSelectedId(study.id); setModelResult(null); setShowStudyContext(true); }} />
+      <StudySelector
+        studies={studies}
+        selected={selected}
+        syntheticActive={syntheticMode}
+        onUpload={() => setUploadOpen(true)}
+        onSynthetic={() => {
+          setSyntheticMode(true);
+          setSyntheticStudy(null);
+          setModelResult(null);
+          setShowStudyContext(true);
+        }}
+        onSelect={(study) => {
+          setSyntheticMode(false);
+          setSelectedId(study.id);
+          setModelResult(null);
+          setShowStudyContext(true);
+        }}
+      />
       <main className="content">
         <section className="study-title">
-          <h1>{selected.drug}</h1>
-          <dl><div><dt>Route</dt><dd>{selected.route}</dd></div><div><dt>Dose</dt><dd>{selected.dose === null ? "Not reported" : `${format(selected.dose)} ${selected.doseUnit}`}</dd></div><div><dt>Individuals</dt><dd>{selected.subjects.length || "Aggregate"}</dd></div><div><dt>Matrix</dt><dd>{selected.medium || "Not reported"}</dd></div></dl>
+          <h1>{syntheticMode ? "Synthetic study" : selected.drug}</h1>
+          <dl>
+            <div><dt>Route</dt><dd>{activeStudy?.route ?? "Sampled with model"}</dd></div>
+            <div><dt>Dose</dt><dd>{activeStudy ? (activeStudy.dose === null ? "Not reported" : `${format(activeStudy.dose)} ${activeStudy.doseUnit}`) : "Dimensionless"}</dd></div>
+            <div><dt>Individuals</dt><dd>{activeStudy?.subjects.length || (syntheticMode ? "Not generated" : "Aggregate")}</dd></div>
+            <div><dt>Matrix</dt><dd>{activeStudy?.medium || (syntheticMode ? "Central compartment" : "Not reported")}</dd></div>
+          </dl>
         </section>
-        <section className="overview-grid">
+        {syntheticMode ? <section className={syntheticStudy ? "overview-grid synthetic-overview" : "overview-grid synthetic-overview pending"}>
+          <SyntheticStudyBuilder
+            onClear={() => { setSyntheticStudy(null); setModelResult(null); setShowStudyContext(true); }}
+            onGenerate={(study) => { setSyntheticStudy(study); setModelResult(null); setShowStudyContext(true); }}
+          />
+          {syntheticStudy && <ModelPanel key={syntheticStudy.id} study={syntheticStudy} onResult={setModelResult} />}
+        </section> : <section className="overview-grid">
           <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} /></article>
           <ModelPanel key={selected.id} study={selected} onResult={setModelResult} />
-        </section>
-        <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
-        <section className="results-grid">
-          <article className="card chart-card">
-            <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} showStudyContext={showStudyContext} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
-            {modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={selected} logY={vpcLogY} />}
-            <VpcCaption study={selected} result={modelResult} showStudyContext={showStudyContext} />
-          </article>
-          <article className="card chart-card">
-            <div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}{(!modelResult || showStudyContext) && <><i className="blue-line" />Study</>}</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
-            {modelResult ? <ModelTrajectoryChart result={modelResult} study={selected} logY={trajectoryLogY} showEmpirical={showStudyContext} /> : <TrajectoryChart study={selected} logY={trajectoryLogY} />}
-            <IndividualsCaption study={selected} result={modelResult} showStudyContext={showStudyContext} />
-          </article>
-          <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
-            <PkDistributionChart study={selected} result={modelResult} />
-          </article>
-        </section>
+        </section>}
+        {activeStudy && <>
+          <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
+          <section className="results-grid">
+            <article className="card chart-card">
+              <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} showStudyContext={showStudyContext} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
+              {modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={activeStudy} logY={vpcLogY} />}
+              <VpcCaption study={activeStudy} result={modelResult} showStudyContext={showStudyContext} />
+            </article>
+            <article className="card chart-card">
+              <div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}{(!modelResult || showStudyContext) && <><i className="blue-line" />Study</>}</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
+              {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical={showStudyContext} /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} />}
+              <IndividualsCaption study={activeStudy} result={modelResult} showStudyContext={showStudyContext} />
+            </article>
+            <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
+              <PkDistributionChart study={activeStudy} result={modelResult} />
+            </article>
+          </section>
+        </>}
       </main>
     </div>
     {uploadOpen && <DatasetUploadDialog onClose={() => setUploadOpen(false)} onStudy={(study) => {
       setCustomStudy(study);
+      setSyntheticMode(false);
       setSelectedId(study.id);
       setModelResult(null);
       setShowStudyContext(true);

@@ -291,7 +291,7 @@ export function sampleProtocol(graph: GraphDraw, rng: Rng): ProtocolDraw {
   return { route: graph.route, events, multidose, infusion, pattern, rawProtocolHorizon };
 }
 
-export function sampleCohort(graph: GraphDraw, kinetics: KineticDraw, rng: Rng): CohortDraw {
+export function sampleCohort(graph: GraphDraw, kinetics: KineticDraw, rng: Rng, nIndividuals = 35): CohortDraw {
   const nRates = kinetics.rates.length;
   const rateSigmas = Array.from({ length: nRates }, () => 0.15 + 0.25 * rng.uniform());
   const correlation = 0.5;
@@ -308,7 +308,7 @@ export function sampleCohort(graph: GraphDraw, kinetics: KineticDraw, rng: Rng):
   const covariateScale = covariateActive ? 0.2 + rng.uniform() : 0;
   const weights = Array.from({ length: nCovariates }, () => Array.from({ length: nRates }, () => rng.uniform() < 0.5 ? 0 : rng.normal() / Math.sqrt(Math.max(1, nCovariates))));
   const individuals: IndividualDraw[] = [];
-  for (let i = 0; i < 35; i += 1) {
+  for (let i = 0; i < nIndividuals; i += 1) {
     const common = rng.normal();
     const covariates = covariateTypes.map((type) => type === "continuous" ? rng.normal() : rng.int(0, rng.choice([1, 2, 3], [0.5, 0.3, 0.2])));
     const shift = Array.from({ length: nRates }, (_, j) => {
