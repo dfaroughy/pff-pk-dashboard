@@ -168,7 +168,7 @@ test("uses model-specific generation limits", async () => {
 test("renders the server-side Pharmpy VPC summary", () => {
   render(<ModelVpcChart result={response} study={study} logY={false} showEmpirical={false} />);
   const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check computed with Pharmpy" });
-  expect(chart.querySelectorAll("g[clip-path] > rect")).toHaveLength(3);
+  expect(chart.querySelectorAll("g[clip-path] > path")).toHaveLength(3);
   expect(chart.querySelectorAll("g[clip-path] > g")).toHaveLength(0);
   expect(chart.querySelectorAll("circle")).toHaveLength(0);
   const xTicks = [...chart.querySelectorAll("text.tick")].slice(0, 5).map((tick) => tick.textContent);
