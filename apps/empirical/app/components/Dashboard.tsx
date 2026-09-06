@@ -447,15 +447,15 @@ function VpcLegend({ result, showStudyContext, empiricalVpc }: {
   empiricalVpc: boolean;
 }) {
   if (!result) return <span className="legend">
-    <i className="cyan-solid-line" />{empiricalVpc ? "50%" : "Mean"}
-    <i className={empiricalVpc ? "cyan-dashed-line" : "blue-band"} />{empiricalVpc ? "5/95%" : "±SD"}
+    <i className="magenta-solid-line" />{empiricalVpc ? "50%" : "Mean"}
+    <i className={empiricalVpc ? "cyan-solid-line" : "blue-band"} />{empiricalVpc ? "5/95%" : "±SD"}
   </span>;
   return <span className="legend">
     <i className="generated-outer-band" />Pythia 5/95%
     <i className="generated-median-band" />Pythia 50%
     {showStudyContext && <>
-      <i className="cyan-solid-line" />Study 50%
-      <i className="cyan-dashed-line" />Study 5/95%
+      <i className="magenta-solid-line" />Study 50%
+      <i className="cyan-solid-line" />Study 5/95%
     </>}
   </span>;
 }
@@ -469,10 +469,10 @@ function VpcCaption({ study, result, showStudyContext }: {
     Published concentration summary for {study.drug}. The solid curve is the reported mean and the shaded region is ±SD.
   </p>;
   if (!result) return <p className="plot-caption">
-    Visual predictive check for {study.drug} with N={study.subjects.length} individuals. The solid curve is the observed median; dashed curves are the observed 5th and 95th percentiles.
+    Visual predictive check for {study.drug} with N={study.subjects.length} individuals. The magenta curve is the observed median; cyan curves are the observed 5th and 95th percentiles.
   </p>;
   return <p className="plot-caption">
-    Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. Solid curves are medians; dashed curves are 5th and 95th percentiles. Shaded regions are 90% simulation intervals estimated with Pharmpy.{showStudyContext ? "" : " The observed study overlay is hidden."}
+    Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. The observed median is magenta and its 5th and 95th percentiles are cyan. Shaded regions are 90% simulation intervals estimated with Pharmpy.{showStudyContext ? "" : " The observed study overlay is hidden."}
   </p>;
 }
 

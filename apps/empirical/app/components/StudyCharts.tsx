@@ -92,16 +92,16 @@ export function VpcChart({ study, logY }: { study: Study; logY: boolean }) {
     const mean = study.summary.map((point) => [point.time, point.mean] as Point);
     const lower = study.summary.map((point) => [point.time, Math.max(point.mean - (point.sd ?? 0), 1e-30)] as Point);
     const upper = study.summary.map((point) => [point.time, point.mean + (point.sd ?? 0)] as Point);
-    return <Chart series={[mean]} styles={[{ stroke: "var(--blue)", width: 1, markers: true, radius: 2.2 }]} bands={[{ lower, upper, fill: "var(--blue-summary-fill)" }]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Published concentration summary for ${study.drug}`} />;
+    return <Chart series={[mean]} styles={[{ stroke: "var(--magenta)", width: 1, markers: true, radius: 2.2 }]} bands={[{ lower, upper, fill: "var(--blue-summary-fill)" }]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Published concentration summary for ${study.drug}`} />;
   }
   const vpc = (study.observedVpc ?? observedVpc(study)).filter((point) => point.n >= 2);
   const q05 = vpc.map((point) => [point.time, point.q05] as Point);
   const q50 = vpc.map((point) => [point.time, point.q50] as Point);
   const q95 = vpc.map((point) => [point.time, point.q95] as Point);
   return <Chart series={[q50, q05, q95]} styles={[
-    { stroke: "var(--cyan)", width: 1.5, markers: true, radius: 2.2 },
-    { stroke: "var(--cyan)", width: 0.75, markers: true, radius: 2.2, dash: "7 5" },
-    { stroke: "var(--cyan)", width: 0.75, markers: true, radius: 2.2, dash: "7 5" },
+    { stroke: "var(--magenta)", width: 1, markers: true, radius: 2.2 },
+    { stroke: "var(--cyan)", width: 1, markers: true, radius: 2.2 },
+    { stroke: "var(--cyan)", width: 1, markers: true, radius: 2.2 },
   ]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Observed visual predictive check for ${study.drug}`} />;
 }
 
@@ -137,10 +137,10 @@ export function ModelVpcChart({ result, logY, showEmpirical }: { result: Inferen
   return <Chart
     series={[...empiricalSeries, ...generatedQuantiles]}
     styles={[
-      ...empiricalSeries.map((_, index) => ({ stroke: "var(--cyan)", width: index === 1 ? 1.5 : 0.75, markers: true, radius: 2.1, dash: index === 1 ? undefined : "7 5" })),
+      ...empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--magenta)" : "var(--cyan)", width: 1, markers: true, radius: 2.1 })),
       ...generatedQuantiles.map((_, index) => ({
         stroke: "var(--vpc-generated-line)",
-        width: 0.4,
+        width: 1,
         markers: true,
         radius: 1.35,
         dash: index === 1 ? undefined : "7 5",
