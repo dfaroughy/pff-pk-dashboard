@@ -299,7 +299,6 @@ button { cursor: pointer; }
 .results-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .stale-results { position: relative; }
 .stale-results .card { opacity: .34; pointer-events: none; filter: saturate(.55); transition: opacity .18s ease; }
-.stale-results::after { position: absolute; z-index: 2; top: 13px; left: 50%; border: 1px solid var(--line-bright); padding: 5px 8px; background: var(--paper); color: var(--muted); content: "Previous cohort · generate to update"; font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; transform: translateX(-50%); }
 .empty-plot { display: grid; aspect-ratio: 1.618 / 1; padding: 30px 22px 52px 62px; }
 .distribution-card .empty-plot { aspect-ratio: 720 / 750; }
 .empty-plot-frame { position: relative; display: grid; place-items: center; border-left: 1px solid var(--line-bright); border-bottom: 1px solid var(--line-bright); background: repeating-linear-gradient(to bottom, transparent 0, transparent calc(25% - 1px), var(--line) 25%); }
@@ -308,12 +307,15 @@ button { cursor: pointer; }
 .card { border: 1px solid var(--line); border-radius: 0; background: var(--paper); box-shadow: none; }
 .chart-card { min-width: 0; padding: 16px 16px 10px; }
 .card-heading, .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 6px; }
-.chart-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-.plot-scale-toggle { border: 1px solid var(--line-bright); padding: 3px 7px; background: var(--panel-raised); color: var(--muted); font-family: var(--font-data); font-size: 8px; line-height: 1.2; }
-.plot-scale-toggle:hover { border-color: var(--cyan); color: var(--cyan); }
-.plot-scale-toggle[aria-pressed="true"] { border-color: var(--orange); color: var(--orange); }
-.legend { display: flex; align-items: center; gap: 5px; color: var(--muted); font-family: var(--font-data); font-size: 10px; white-space: nowrap; }
-.legend i { width: 17px; height: 2px; display: inline-block; margin-left: 7px; }
+.chart-actions { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 7px; }
+.plot-scale-switch { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px; border: 0; padding: 1px; background: transparent; color: var(--faint); font-family: var(--font-data); font-size: 6.5px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; }
+.plot-scale-switch i { position: relative; width: 22px; height: 11px; border: 1px solid var(--line-bright); background: var(--panel-raised); }
+.plot-scale-switch i::after { position: absolute; top: 1px; left: 1px; width: 7px; height: 7px; background: var(--muted); content: ""; transition: transform .15s ease, background .15s ease; }
+.plot-scale-switch[aria-checked="true"] i::after { background: var(--acid); transform: translateX(11px); }
+.plot-scale-switch:hover { color: var(--ink); }
+.plot-scale-switch:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+.legend { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 3px 4px; color: var(--muted); font-family: var(--font-data); font-size: 7px; line-height: 1.15; }
+.legend i { flex: 0 0 auto; width: 12px; height: 2px; display: inline-block; margin-left: 3px; }
 .blue-line { background: var(--cyan); }
 .orange-line { background: var(--orange); }
 .red-line { background: var(--magenta); }
@@ -377,7 +379,7 @@ button { cursor: pointer; }
 .distribution-axis { stroke: var(--line-bright); stroke-width: 1; }
 .distribution-grid { stroke: color-mix(in srgb, var(--line-bright) 65%, transparent); stroke-width: 1; }
 .distribution-symbol { fill: var(--ink); font-family: var(--font-ui); font-size: 22px; font-weight: 650; }
-.distribution-unit, .distribution-value, .distribution-count { fill: var(--muted); font-family: var(--font-data); font-size: 16px; }
+.distribution-value, .distribution-count { fill: var(--muted); font-family: var(--font-data); font-size: 16px; }
 .distribution-count { font-size: 13px; }
 
 .model-select { display: block; margin: 0 0 12px; color: var(--muted); font-family: var(--font-data); font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }

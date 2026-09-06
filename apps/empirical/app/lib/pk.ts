@@ -40,18 +40,27 @@ function terminalSlope(points: Point[]): number | null {
   return slope < 0 ? -slope : null;
 }
 
-export function pkEstimatesFromPoints(points: Point[], concentrationUnit: string, timeUnit: string): PkEstimate[] {
+export function pkEstimatesFromPoints(
+  points: Point[],
+  concentrationUnit: string,
+  timeUnit: string,
+  dose: number | null = null,
+  doseUnit = "dose",
+): PkEstimate[] {
   points = points
     .filter(([time, value]) => Number.isFinite(time) && Number.isFinite(value) && value > 0)
     .sort(([left], [right]) => left - right);
   if (!points.length) return [];
   const peak = points.reduce((best, point, index) => point[1] > points[best][1] ? index : best, 0);
   const lambda = terminalSlope(points);
+  const aucLast = auc(points);
+  const clearance = dose !== null && dose > 0 && aucLast !== null && aucLast > 0 ? dose / aucLast : null;
   return [
     { label: "Maximum observed concentration", symbol: "Cmax", value: points[peak][1], unit: concentrationUnit },
     { label: "Time of maximum concentration", symbol: "Tmax", value: points[peak][0], unit: timeUnit },
-    { label: "Area under curve to last sample", symbol: "AUClast", value: auc(points), unit: `${concentrationUnit}·${timeUnit}` },
+    { label: "Area under curve to last sample", symbol: "AUClast", value: aucLast, unit: `${concentrationUnit}·${timeUnit}` },
     { label: "Terminal elimination rate", symbol: "λz", value: lambda, unit: `${timeUnit}⁻¹` },
     { label: "Terminal half-life", symbol: "t½", value: lambda ? Math.log(2) / lambda : null, unit: timeUnit },
+    { label: "Dose divided by AUC to last sample", symbol: "CL", value: clearance, unit: `${doseUnit}/(${concentrationUnit}·${timeUnit})` },
   ];
 }

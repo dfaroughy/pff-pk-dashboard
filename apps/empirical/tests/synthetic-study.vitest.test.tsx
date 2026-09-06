@@ -182,6 +182,8 @@ test("keeps the previous synthetic plots visible but faded until regeneration", 
   const chart = await screen.findByRole("img", { name: "Observed visual predictive check for Synthetic cohort" });
   const results = chart.closest(".results-grid") as HTMLElement;
   expect(results.dataset.stale).toBeUndefined();
+  expect([...results.querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual(["Individuals", "VPC", "PK quantities"]);
+  expect(screen.getByRole("switch", { name: "concentration profiles linear scale" }).getAttribute("aria-checked")).toBe("true");
   expect((screen.getByLabelText(/Individuals/) as HTMLInputElement).valueAsNumber).toBe(10);
   expect((screen.getByLabelText(/Observations per individual/) as HTMLInputElement).valueAsNumber).toBe(8);
   await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));

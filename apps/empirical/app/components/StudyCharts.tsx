@@ -200,11 +200,23 @@ function DistributionGlyph({ values, center, color, y }: {
 
 export function PkDistributionChart({ study, result }: { study: Study; result: InferenceResponse | null }) {
   const metrics = useMemo(() => {
-    const observed = study.subjects.map((subject) => pkEstimatesFromPoints(subject.points, study.concentrationUnit, study.timeUnit));
+    const observedDose = study.doseEvents?.length
+      ? study.doseEvents.reduce((sum, event) => sum + event.amount, 0)
+      : study.dose;
+    const generatedDose = result?.request.doseEvents.reduce((sum, event) => sum + event.amount, 0) ?? null;
+    const observed = study.subjects.map((subject) => pkEstimatesFromPoints(
+      subject.points,
+      study.concentrationUnit,
+      study.timeUnit,
+      observedDose,
+      study.doseUnit,
+    ));
     const generated = result?.generatedConcentration.map((values) => pkEstimatesFromPoints(
       result.queryTime.map((time, index) => [time, values[index]] as Point),
       result.units.concentration,
       result.units.time,
+      generatedDose,
+      result.request.doseEvents[0]?.unit ?? study.doseUnit,
     )) ?? [];
     const template = observed[0] ?? generated[0] ?? [];
     return template.map((metric, metricIndex) => ({
@@ -237,7 +249,6 @@ export function PkDistributionChart({ study, result }: { study: Study; result: I
         <title>{metric.label}</title>
         {column > 0 && <line className="distribution-separator" x1={panelWidth * column} x2={panelWidth * column} y1={rowOffset + 8} y2={rowOffset + DISTRIBUTION_ROW_HEIGHT - 8} />}
         <text className="distribution-symbol" x={midpoint} y={rowOffset + 18} textAnchor="middle"><MetricSymbol symbol={metric.symbol} /></text>
-        <text className="distribution-unit" x={midpoint} y={rowOffset + 34} textAnchor="middle">{metric.unit}</text>
         {scaleTicks.map((tick) => <g key={tick}>
           <line className="distribution-grid" x1={midpoint - 43} x2={midpoint + 43} y1={y(tick)} y2={y(tick)} />
           <text className="distribution-value" x={midpoint - 47} y={y(tick) + 3} textAnchor="end">{compactNumber(tick)}</text>

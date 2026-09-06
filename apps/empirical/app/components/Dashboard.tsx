@@ -97,14 +97,15 @@ function format(value: number | null) {
 }
 
 function PlotScaleToggle({ logY, onChange, plot }: { logY: boolean; onChange: (logY: boolean) => void; plot: string }) {
-  const nextScale = logY ? "linear" : "logarithmic";
+  const linear = !logY;
   return <button
-    className="plot-scale-toggle"
+    className="plot-scale-switch"
     type="button"
-    aria-label={`Switch ${plot} to ${nextScale} scale`}
-    aria-pressed={logY}
+    role="switch"
+    aria-label={`${plot} linear scale`}
+    aria-checked={linear}
     onClick={() => onChange(!logY)}
-  >{logY ? "Log" : "Linear"}</button>;
+  ><span>Log</span><i aria-hidden="true" /><span>Lin</span></button>;
 }
 
 export function studyLabel(study: Study, studies: Study[]) {
@@ -426,8 +427,8 @@ function InactiveModelPanel({ stale = false }: { stale?: boolean }) {
 
 export function SyntheticResultsPlaceholder() {
   const panels = [
-    { title: "VPC", label: "Empty visual predictive check" },
     { title: "Individuals", label: "Empty individual concentration profiles" },
+    { title: "VPC", label: "Empty visual predictive check" },
     { title: "PK quantities", label: "Empty pharmacokinetic quantity distributions" },
   ];
   return <section className="results-grid synthetic-results-placeholder">
@@ -550,14 +551,14 @@ export function Dashboard() {
         {activeStudy ? <>
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">
-              <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} showStudyContext={showStudyContext} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
-              {modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={activeStudy} logY={vpcLogY} />}
-              <VpcCaption study={activeStudy} result={modelResult} showStudyContext={showStudyContext} />
-            </article>
-            <article className="card chart-card">
               <div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}{(!modelResult || showStudyContext) && <><i className="blue-line" />Study</>}</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
               {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical={showStudyContext} /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} />}
               <IndividualsCaption study={activeStudy} result={modelResult} showStudyContext={showStudyContext} />
+            </article>
+            <article className="card chart-card">
+              <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} showStudyContext={showStudyContext} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
+              {modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={activeStudy} logY={vpcLogY} />}
+              <VpcCaption study={activeStudy} result={modelResult} showStudyContext={showStudyContext} />
             </article>
             <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
               <PkDistributionChart study={activeStudy} result={modelResult} />
