@@ -60,7 +60,7 @@ test("clamps public synthetic cohort controls and emits a generated cohort", asy
   expect(observations.valueAsNumber).toBe(20);
 
   expect(screen.queryByText(/Interactive prior draw/)).toBeNull();
-  expect(screen.getByRole("button", { name: "[draw graph]" }).closest(".synthetic-graph-panel")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Draw new compartment model" }).closest(".synthetic-graph-panel")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Compartment graph" }).getAttribute("aria-expanded")).toBe("true");
   await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
   expect((screen.getByLabelText("Dose 1 time") as HTMLInputElement).valueAsNumber).toBe(0);

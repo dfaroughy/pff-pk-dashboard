@@ -129,23 +129,9 @@ export function ModelVpcChart({ result, logY, showEmpirical }: { result: Inferen
     model.map((entry) => [entry.time, entry.observed.q50] as Point),
     model.map((entry) => [entry.time, entry.observed.q95] as Point),
   ] : [];
-  const generatedQuantiles = [
-    point("q05", "center"),
-    point("q50", "center"),
-    point("q95", "center"),
-  ];
   return <Chart
-    series={[...empiricalSeries, ...generatedQuantiles]}
-    styles={[
-      ...empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--magenta)" : "var(--cyan)", width: 1, markers: true, radius: 2.1 })),
-      ...generatedQuantiles.map((_, index) => ({
-        stroke: "var(--vpc-generated-line)",
-        width: 1,
-        markers: true,
-        radius: 1.35,
-        dash: index === 1 ? undefined : "7 5",
-      })),
-    ]}
+    series={empiricalSeries}
+    styles={empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--magenta)" : "var(--cyan)", width: 1, markers: true, radius: 2.1 }))}
     bands={[
       { lower: point("q05", "lower"), upper: point("q05", "upper"), fill: "var(--generated-band-fill)" },
       { lower: point("q50", "lower"), upper: point("q50", "upper"), fill: "var(--generated-median-band-fill)" },

@@ -155,12 +155,9 @@ test("exposes only conservative public inference controls", async () => {
 test("renders the server-side Pharmpy VPC summary", () => {
   render(<ModelVpcChart result={response} logY={false} showEmpirical={false} />);
   const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check computed with Pharmpy" });
-  const generated = chart.querySelectorAll("g[clip-path] > g");
-  expect(generated).toHaveLength(3);
-  expect(generated[0].querySelector("path")?.getAttribute("stroke-dasharray")).toBe("7 5");
-  expect(generated[1].querySelector("path")?.getAttribute("stroke-dasharray")).toBeNull();
-  expect(generated[2].querySelector("path")?.getAttribute("stroke-dasharray")).toBe("7 5");
-  expect(chart.querySelectorAll("circle")).toHaveLength(3);
+  expect(chart.querySelectorAll("g[clip-path] > path")).toHaveLength(3);
+  expect(chart.querySelectorAll("g[clip-path] > g")).toHaveLength(0);
+  expect(chart.querySelectorAll("circle")).toHaveLength(0);
 });
 
 test("Pythia is generation-only and sends the baseline protocol", async () => {

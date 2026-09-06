@@ -441,9 +441,8 @@ export function SyntheticResultsPlaceholder() {
   </section>;
 }
 
-function VpcLegend({ result, showStudyContext, empiricalVpc }: {
+function VpcLegend({ result, empiricalVpc }: {
   result: InferenceResponse | null;
-  showStudyContext: boolean;
   empiricalVpc: boolean;
 }) {
   if (!result) return <span className="legend">
@@ -453,17 +452,14 @@ function VpcLegend({ result, showStudyContext, empiricalVpc }: {
   return <span className="legend">
     <i className="generated-outer-band" />Pythia 5/95%
     <i className="generated-median-band" />Pythia 50%
-    {showStudyContext && <>
-      <i className="magenta-solid-line" />Study 50%
-      <i className="cyan-solid-line" />Study 5/95%
-    </>}
+    <i className="magenta-solid-line" />Study 50%
+    <i className="cyan-solid-line" />Study 5/95%
   </span>;
 }
 
-function VpcCaption({ study, result, showStudyContext }: {
+function VpcCaption({ study, result }: {
   study: Study;
   result: InferenceResponse | null;
-  showStudyContext: boolean;
 }) {
   if (!study.subjects.length) return <p className="plot-caption">
     Published concentration summary for {study.drug}. The solid curve is the reported mean and the shaded region is ±SD.
@@ -472,20 +468,19 @@ function VpcCaption({ study, result, showStudyContext }: {
     Visual predictive check for {study.drug} with N={study.subjects.length} individuals. The magenta curve is the observed median; cyan curves are the observed 5th and 95th percentiles.
   </p>;
   return <p className="plot-caption">
-    Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. The observed median is magenta and its 5th and 95th percentiles are cyan. Shaded regions are 90% simulation intervals estimated with Pharmpy.{showStudyContext ? "" : " The observed study overlay is hidden."}
+    Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. The observed median is magenta and its 5th and 95th percentiles are cyan. Shaded regions are 90% simulation intervals estimated with Pharmpy.
   </p>;
 }
 
-function IndividualsCaption({ study, result, showStudyContext }: {
+function IndividualsCaption({ study, result }: {
   study: Study;
   result: InferenceResponse | null;
-  showStudyContext: boolean;
 }) {
   if (!result) return <p className="plot-caption">
     Individual concentration–time profiles for {study.drug} with N={study.subjects.length} individuals. Markers identify observation times.
   </p>;
   return <p className="plot-caption">
-    Individual concentration–time profiles for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. Markers identify observation or model-evaluation times.{showStudyContext ? "" : " The observed study context is hidden."}
+    Individual concentration–time profiles for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. Markers identify observation or model-evaluation times.
   </p>;
 }
 
@@ -501,7 +496,6 @@ export function Dashboard() {
   const [trajectoryLogY, setTrajectoryLogY] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [modelResult, setModelResult] = useState<InferenceResponse | null>(null);
-  const [showStudyContext, setShowStudyContext] = useState(true);
   useEffect(() => { fetch(dashboardRuntimeConfig().corpusUrl).then((response) => response.json()).then(setCorpus); }, []);
   if (!corpus) return <main className="loading"><div className="loading-mark" />Loading PK catalogue…</main>;
   const studies = customStudy ? [customStudy, ...corpus.studies] : corpus.studies;
@@ -527,14 +521,12 @@ export function Dashboard() {
           setSyntheticStudy(generateInitialSyntheticCohort());
           setSyntheticStale(false);
           setModelResult(null);
-          setShowStudyContext(true);
         }}
         onSelect={(study) => {
           setSyntheticMode(false);
           setSyntheticStale(false);
           setSelectedId(study.id);
           setModelResult(null);
-          setShowStudyContext(true);
         }}
       />
       <main className="content">
@@ -547,18 +539,17 @@ export function Dashboard() {
             <div><dt>Matrix</dt><dd>{activeStudy?.medium || (syntheticMode ? "Central compartment" : "Not reported")}</dd></div>
           </dl>
         </section>
-        <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult || (syntheticMode && syntheticStale)} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
         {activeStudy ? <>
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">
-              <div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}{(!modelResult || showStudyContext) && <><i className="blue-line" />Study</>}</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
-              {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical={showStudyContext} /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} />}
-              <IndividualsCaption study={activeStudy} result={modelResult} showStudyContext={showStudyContext} />
+              <div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}<i className="blue-line" />Study</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
+              {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} />}
+              <IndividualsCaption study={activeStudy} result={modelResult} />
             </article>
             <article className="card chart-card">
-              <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} showStudyContext={showStudyContext} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
-              {modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={activeStudy} logY={vpcLogY} />}
-              <VpcCaption study={activeStudy} result={modelResult} showStudyContext={showStudyContext} />
+              <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
+              {modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical /> : <VpcChart study={activeStudy} logY={vpcLogY} />}
+              <VpcCaption study={activeStudy} result={modelResult} />
             </article>
             <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
               <PkDistributionChart study={activeStudy} result={modelResult} />
@@ -568,7 +559,7 @@ export function Dashboard() {
         {syntheticMode ? <section className="overview-grid synthetic-overview">
           <SyntheticStudyBuilder
             onInvalidate={() => { if (syntheticStudy) setSyntheticStale(true); }}
-            onGenerate={(study) => { setSyntheticStudy(study); setSyntheticStale(false); setModelResult(null); setShowStudyContext(true); }}
+            onGenerate={(study) => { setSyntheticStudy(study); setSyntheticStale(false); setModelResult(null); }}
           />
           {syntheticStudy && !syntheticStale ? <ModelPanel key={syntheticStudy.id} study={syntheticStudy} onResult={setModelResult} /> : <InactiveModelPanel stale={syntheticStale} />}
         </section> : <section className="overview-grid">
@@ -583,7 +574,6 @@ export function Dashboard() {
       setSyntheticStale(false);
       setSelectedId(study.id);
       setModelResult(null);
-      setShowStudyContext(true);
       setUploadOpen(false);
     }} />}
   </div>;

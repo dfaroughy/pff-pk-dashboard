@@ -361,7 +361,7 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
               <div><dt>Fluxes</dt><dd>{model.kinetics.rates.length}</dd></div>
               <div><dt>Protocol</dt><dd>{activeModel.protocol.pattern}</dd></div>
             </dl>
-            <div className="synthetic-graph-actions"><button className="secondary-button" type="button" onClick={drawModel}>[draw graph]</button></div>
+            <div className="synthetic-graph-actions"><button className="draw-model-button" type="button" onClick={drawModel}>Draw new compartment model</button></div>
           </div>
           <div className="synthetic-equations">
             <h3>Mass balances</h3>
