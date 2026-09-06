@@ -105,11 +105,11 @@ studies.
   observed at each exact sampling time.
 - After model inference, the VPC is computed server-side. The same
   finite pool shown in the trajectory panel (20 individuals by default) is
-  resampled into 200 inexpensive cohorts matched to the empirical individual
-  observation schedules. Synchronized schedules are evaluated at every exact
-  observation time using Pharmpy's quantile conventions; irregular schedules
-  use Pharmpy's equal-number time bins. Both paths return simulated 90%
-  intervals.
+  resampled into 200 inexpensive cohorts matched to the observed cohort size.
+  Generated quantiles and their 90% simulation intervals are evaluated on the
+  model's exact query mesh: the union of empirical observation times. This
+  retains Pharmpy's nearest-rank quantile convention without introducing bin
+  midpoints or edges that are not model observation times.
 - Summary-only records show the published mean and mean ± SD. They are clearly
   labelled and are not presented as an individual-level VPC.
 - Cmax, Tmax and AUClast are computed from the displayed median (individual

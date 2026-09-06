@@ -129,17 +129,8 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
     observed.map((entry) => [entry.time, entry.q50] as Point),
     observed.map((entry) => [entry.time, entry.q95] as Point),
   ] : [];
-  const contour = (key: "q05" | "q50" | "q95", bound: "lower" | "upper") => {
-    const points = model.map((entry) => [entry.time, entry.simulated[key][bound]] as Point);
-    if (!points.length) return points;
-    return [
-      ...(model[0].timeLower < points[0][0] ? [[model[0].timeLower, points[0][1]] as Point] : []),
-      ...points,
-      ...(model.at(-1)!.timeUpper > points.at(-1)![0]
-        ? [[model.at(-1)!.timeUpper, points.at(-1)![1]] as Point]
-        : []),
-    ];
-  };
+  const contour = (key: "q05" | "q50" | "q95", bound: "lower" | "upper") =>
+    model.map((entry) => [entry.time, entry.simulated[key][bound]] as Point);
   return <Chart
     series={empiricalSeries}
     styles={empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--magenta)" : "var(--cyan)", width: 1, markers: true, radius: 2.1 }))}

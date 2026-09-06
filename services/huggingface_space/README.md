@@ -29,9 +29,9 @@ requests are capped at 100 individuals; Pythia-Dose requests retain the
 30-individual cap. The demo fixes flow integration to eight Heun steps; solver
 controls are not exposed. These limits are enforced by both the dashboard and
 the inference service. Each VPC uses that same generated pool and
-design-matched resampled cohorts. Cohorts with a synchronized schedule are
-evaluated at every exact observation time; irregular schedules use Pharmpy's
-equal-number time bins.
+cohort-size-matched resampled cohorts. Generated VPC quantiles and intervals
+are evaluated at every time on the model's exact query mesh, following
+Pharmpy's nearest-rank convention without time binning.
 
 The named Gradio endpoints are `/health` and `/inference`. Inference is
 serialized to keep memory use bounded; identical requests reuse a response

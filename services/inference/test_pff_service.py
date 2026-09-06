@@ -71,7 +71,9 @@ class RequestValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "greater than zero"):
             target_dose_events([{"time": 0, "amount": 0, "unit": "mg"}], self.cohort)
         with self.assertRaisesRegex(ValueError, "observation horizon"):
-            target_dose_events([{"time": 24, "amount": 10, "duration": 1, "unit": "mg"}], self.cohort)
+            target_dose_events(
+                [{"time": 24, "amount": 10, "duration": 1, "unit": "mg"}], self.cohort
+            )
 
     def test_model_selection_defaults_to_dose_and_rejects_unknown_models(self) -> None:
         self.assertEqual(requested_model({}), "pythia_dose")
@@ -124,7 +126,7 @@ class PharmpyVpcTests(unittest.TestCase):
         )
 
         self.assertEqual(summary["method"], "pharmpy")
-        self.assertEqual(summary["timeBinning"], "exact_schedule")
+        self.assertEqual(summary["timeBinning"], "query_mesh")
         self.assertEqual(summary["generatedIndividuals"], 20)
         self.assertEqual(summary["simulatedCohortReplicates"], 40)
         self.assertEqual(summary["effectiveBins"], 4)
@@ -133,9 +135,13 @@ class PharmpyVpcTests(unittest.TestCase):
             [point["time"] for point in summary["points"]],
             times.tolist(),
         )
+        np.testing.assert_allclose(
+            [point["simulated"]["q50"]["center"] for point in summary["points"]],
+            np.quantile(pool, 0.5, axis=0, method="nearest"),
+        )
         self.assertTrue(all(point["nObservations"] > 0 for point in summary["points"]))
 
-    def test_irregular_schedules_still_use_pharmpy_equal_number_bins(self) -> None:
+    def test_irregular_schedules_are_evaluated_on_the_exact_query_mesh(self) -> None:
         times = np.array([0.5, 1.0, 1.5, 2.0, 4.0])
         baseline = np.array([10.0, 8.0, 7.0, 5.0, 2.0])
         pool = np.stack([baseline * scale for scale in np.linspace(0.7, 1.3, 20)])
@@ -157,8 +163,20 @@ class PharmpyVpcTests(unittest.TestCase):
             seed=7,
         )
 
-        self.assertEqual(summary["timeBinning"], "equal_number")
-        self.assertEqual(summary["effectiveBins"], 3)
+        self.assertEqual(summary["timeBinning"], "query_mesh")
+        self.assertEqual(summary["effectiveBins"], 5)
+        self.assertEqual(
+            [point["time"] for point in summary["points"]],
+            times.tolist(),
+        )
+        self.assertEqual(summary["points"][-1]["time"], 4.0)
+        self.assertEqual(summary["points"][-1]["timeLower"], 4.0)
+        self.assertEqual(summary["points"][-1]["timeUpper"], 4.0)
+        np.testing.assert_allclose(
+            [point["simulated"]["q50"]["center"] for point in summary["points"]],
+            np.quantile(pool, 0.5, axis=0, method="nearest"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

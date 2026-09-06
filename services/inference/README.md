@@ -14,11 +14,11 @@ identifier is part of each content-addressed cache key and response.
 
 Each response also contains a formal VPC summary. The service uses the same
 finite pool returned in `generatedConcentration`—20 curves by default—and
-constructs 200 design-matched cohort replicates by resampling those curves.
-Synchronized schedules are evaluated at every exact observation time using
-Pharmpy's quantile conventions; irregular schedules use Pharmpy's equal-number
-time binning. The replicate count therefore does not represent additional
-neural-model draws.
+constructs 200 cohort-size-matched replicates by resampling those curves.
+Generated quantiles and their 90% simulation intervals are evaluated on the
+exact model query mesh using Pharmpy's nearest-rank convention. No bin midpoint
+or edge is rendered as a model observation. The replicate count therefore does
+not represent additional neural-model draws.
 
 For local development, run `npm run dev:empirical` from the repository root.
 The application wrapper starts this service with the sibling `pff_pk`

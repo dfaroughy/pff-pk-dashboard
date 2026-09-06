@@ -34,10 +34,11 @@ public dashboard fixes integration to eight Heun steps and exposes the number
 of generated individuals (20 by default; at most 100 for Pythia and 30 for
 Pythia-Dose) and the reproducible random seed (43 by default). It uses the same
 inference contract through a CPU Hugging Face Space. The service resamples that
-finite pool into design-matched cohort replicates. Synchronized schedules use
-exact-time VPC statistics; irregular schedules use Pharmpy's equal-number time
-bins. Resampling does not invoke the neural model or increase the number of
-generated individuals. Caching the
+finite pool into cohort-size-matched replicates. All generated VPC statistics
+are evaluated at the exact union of empirical observation times using
+Pharmpy's nearest-rank convention; no derived time-bin midpoint or edge is
+plotted as a generated observation. Resampling does not invoke the neural model
+or increase the number of generated individuals. Caching the
 context encoding and GP factor across separate protocol requests remains a
 performance improvement.
 

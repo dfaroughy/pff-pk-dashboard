@@ -53,14 +53,14 @@ const response: InferenceResponse = {
   generatedConcentration: [[1, 0.1]],
   vpc: {
     method: "pharmpy",
-    timeBinning: "equal_number",
+    timeBinning: "query_mesh",
     generatedIndividuals: 1,
     simulatedCohortReplicates: 200,
     requestedBins: 10,
     effectiveBins: 1,
     points: [{
-      time: 12,
-      timeLower: 0.5,
+      time: 24,
+      timeLower: 24,
       timeUpper: 24,
       nObservations: 4,
       observed: { q05: 0.1, q50: 1, q95: 3 },
