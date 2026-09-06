@@ -171,6 +171,8 @@ test("renders the server-side Pharmpy VPC summary", () => {
   expect(chart.querySelectorAll("g[clip-path] > path")).toHaveLength(3);
   expect(chart.querySelectorAll("g[clip-path] > g")).toHaveLength(0);
   expect(chart.querySelectorAll("circle")).toHaveLength(0);
+  const xTicks = [...chart.querySelectorAll("text.tick")].slice(0, 5).map((tick) => tick.textContent);
+  expect(xTicks.at(-1)).toBe("24.0");
 });
 
 test("Pythia is generation-only and sends the baseline protocol", async () => {

@@ -123,11 +123,23 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { r
 
 export function ModelVpcChart({ result, logY, showEmpirical }: { result: InferenceResponse; logY: boolean; showEmpirical: boolean }) {
   const model = result.vpc.points;
-  const point = (key: "q05" | "q50" | "q95", bound: "lower" | "center" | "upper") => model.map((entry) => [entry.time, entry.simulated[key][bound]] as Point);
+  const queryStart = result.queryTime[0];
+  const queryEnd = result.queryTime.at(-1);
+  const spanQueryDomain = (points: Point[]) => {
+    if (!points.length || queryStart === undefined || queryEnd === undefined) return points;
+    return [
+      ...(queryStart < points[0][0] ? [[queryStart, points[0][1]] as Point] : []),
+      ...points,
+      ...(queryEnd > points.at(-1)![0] ? [[queryEnd, points.at(-1)![1]] as Point] : []),
+    ];
+  };
+  const point = (key: "q05" | "q50" | "q95", bound: "lower" | "center" | "upper") => spanQueryDomain(
+    model.map((entry) => [entry.time, entry.simulated[key][bound]] as Point),
+  );
   const empiricalSeries = showEmpirical ? [
-    model.map((entry) => [entry.time, entry.observed.q05] as Point),
-    model.map((entry) => [entry.time, entry.observed.q50] as Point),
-    model.map((entry) => [entry.time, entry.observed.q95] as Point),
+    spanQueryDomain(model.map((entry) => [entry.time, entry.observed.q05] as Point)),
+    spanQueryDomain(model.map((entry) => [entry.time, entry.observed.q50] as Point)),
+    spanQueryDomain(model.map((entry) => [entry.time, entry.observed.q95] as Point)),
   ] : [];
   return <Chart
     series={empiricalSeries}
