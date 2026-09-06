@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { Dashboard, SyntheticResultsPlaceholder } from "../app/components/Dashboard";
 import { SyntheticStudyBuilder, balanceEquation } from "../app/components/SyntheticStudyBuilder";
-import { generateSyntheticCohort, previewSyntheticObservationTimes, sampleSyntheticModel, withDoseCount } from "../app/lib/synthetic-study";
+import { generateSyntheticCohort, previewSyntheticObservationTimes, sampleSyntheticModel } from "../app/lib/synthetic-study";
 
 afterEach(() => {
   cleanup();
@@ -47,18 +47,6 @@ test("renders compartment balances as signed sums of fluxes", () => {
   });
 });
 
-test("constructs selectable one-to-four-dose protocols inside the unit horizon", () => {
-  const model = sampleSyntheticModel(43);
-  const multidose = withDoseCount(model, 4);
-
-  expect(multidose.protocol.events).toHaveLength(4);
-  expect(multidose.protocol.events[0].time).toBe(0);
-  expect(multidose.protocol.events.every((event) => event.time + event.duration <= 1)).toBe(true);
-  expect(multidose.protocol.events.map((event) => event.time)).toEqual(
-    [...multidose.protocol.events.map((event) => event.time)].sort((left, right) => left - right),
-  );
-});
-
 test("clamps public synthetic cohort controls and emits a generated cohort", async () => {
   const user = userEvent.setup();
   const onGenerate = vi.fn();
@@ -75,7 +63,13 @@ test("clamps public synthetic cohort controls and emits a generated cohort", asy
   expect(screen.getByRole("button", { name: "[draw graph]" }).closest(".synthetic-graph-panel")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Compartment graph" }).getAttribute("aria-expanded")).toBe("true");
   await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
-  await user.selectOptions(screen.getByLabelText("Dose schedule"), "4");
+  expect((screen.getByLabelText("Dose 1 time") as HTMLInputElement).valueAsNumber).toBe(0);
+  expect((screen.getByLabelText("Dose 1 time") as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Dose 1 relative amount") as HTMLInputElement).valueAsNumber).toBe(1);
+  expect((screen.getByLabelText("Dose 1 duration") as HTMLInputElement).valueAsNumber).toBe(0);
+  await user.click(screen.getByRole("button", { name: "+ Add dose" }));
+  await user.click(screen.getByRole("button", { name: "+ Add dose" }));
+  await user.click(screen.getByRole("button", { name: "+ Add dose" }));
   expect(screen.getByRole("img", { name: "Dimensionless dose and observation schedule timeline" })).toBeTruthy();
 
   await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
@@ -148,6 +142,26 @@ test("accepts a user-defined relative dose", async () => {
   await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
 
   expect(onGenerate.mock.calls[0][0].doseEvents[0].amount).toBe(2.5);
+});
+
+test("adds and edits a future dose event on the protocol timeline", async () => {
+  const user = userEvent.setup();
+  const onGenerate = vi.fn();
+  render(<SyntheticStudyBuilder onGenerate={onGenerate} onInvalidate={vi.fn()} />);
+
+  await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
+  await user.click(screen.getByRole("button", { name: "+ Add dose" }));
+  const time = screen.getByLabelText("Dose 2 time");
+  const amount = screen.getByLabelText("Dose 2 relative amount");
+  const duration = screen.getByLabelText("Dose 2 duration");
+  await user.clear(time); await user.type(time, "0.6"); await user.tab();
+  await user.clear(amount); await user.type(amount, "4"); await user.tab();
+  await user.clear(duration); await user.type(duration, "0.1"); await user.tab();
+
+  expect(screen.getByText("infusion")).toBeTruthy();
+  expect(document.querySelectorAll(".timeline-infusion")).toHaveLength(1);
+  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
+  expect(onGenerate.mock.calls[0][0].doseEvents[1]).toMatchObject({ time: 0.6, amount: 4, duration: 0.1 });
 });
 
 test("keeps the previous synthetic plots visible but faded until regeneration", async () => {

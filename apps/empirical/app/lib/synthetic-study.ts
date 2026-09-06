@@ -76,45 +76,6 @@ export function sampleSyntheticModel(seed: number): SyntheticModelDraw {
   };
 }
 
-export function withDoseCount(model: SyntheticModelDraw, requestedCount: number): SyntheticModelDraw {
-  const count = boundedInteger(requestedCount, 1, 4);
-  const source = model.protocol.events.length ? model.protocol.events : [{
-    time: 0,
-    amount: 1,
-    duration: 0,
-    route: model.graph.route,
-  }];
-  const duration = source[0].duration;
-  const sourceLastTime = source[source.length - 1].time;
-  const scheduleEnd = Math.min(sourceLastTime > 0 ? sourceLastTime : 0.75, 1 - duration);
-  const amountAt = (fraction: number) => {
-    if (source.length === 1) return source[0].amount;
-    const position = fraction * (source.length - 1);
-    const left = Math.floor(position);
-    const right = Math.min(source.length - 1, left + 1);
-    const weight = position - left;
-    return source[left].amount * (1 - weight) + source[right].amount * weight;
-  };
-  const events = Array.from({ length: count }, (_, index) => {
-    const fraction = count === 1 ? 0 : index / (count - 1);
-    return {
-      time: count === 1 ? 0 : fraction * scheduleEnd,
-      amount: amountAt(fraction),
-      duration,
-      route: model.graph.route,
-    };
-  });
-  return {
-    ...model,
-    protocol: {
-      ...model.protocol,
-      events,
-      multidose: count > 1,
-      pattern: count > 1 && model.protocol.pattern === "single" ? "maintenance" : count === 1 ? "single" : model.protocol.pattern,
-    },
-  };
-}
-
 export function generateSyntheticCohort(
   model: SyntheticModelDraw,
   nIndividuals: number,

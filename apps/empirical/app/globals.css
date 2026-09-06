@@ -271,11 +271,15 @@ button { cursor: pointer; }
 .timeline-observation { fill: var(--orange); opacity: .48; }
 .synthetic-dose-timeline marker path { fill: var(--cyan); }
 .synthetic-dose-editor { display: grid; gap: 5px; }
-.synthetic-dose-row { display: grid; grid-template-columns: 55px minmax(145px, .7fr) minmax(70px, .35fr) minmax(105px, .45fr); align-items: center; gap: 9px; border-top: 1px solid var(--line); padding: 7px 4px 2px; color: var(--muted); font-family: var(--font-data); font-size: 8px; }
+.synthetic-dose-row { display: grid; grid-template-columns: 48px repeat(3, minmax(112px, 1fr)) 58px 24px; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 7px 4px 2px; color: var(--muted); font-family: var(--font-data); font-size: 8px; }
 .synthetic-dose-row > span:first-child { color: var(--cyan); font-weight: 700; text-transform: uppercase; }
 .synthetic-dose-input { display: flex; align-items: center; gap: 7px; }
-.synthetic-dose-row input { width: 92px; min-width: 0; border: 1px solid var(--line-bright); border-radius: 0; padding: 5px 6px; background: var(--paper); color: var(--ink); font-family: var(--font-data); font-size: 8px; }
+.synthetic-dose-row input { width: 72px; min-width: 0; border: 1px solid var(--line-bright); border-radius: 0; padding: 5px 6px; background: var(--paper); color: var(--ink); font-family: var(--font-data); font-size: 8px; }
 .synthetic-dose-row input:focus { border-color: var(--cyan); outline: none; }
+.synthetic-dose-row input:disabled { background: var(--wash); color: var(--faint); cursor: not-allowed; }
+.synthetic-dose-kind { color: var(--cyan); text-transform: uppercase; }
+.synthetic-dose-actions { display: flex; gap: 6px; margin-top: 9px; }
+.synthetic-dose-actions .secondary-button { margin: 0; }
 .synthetic-generate-controls { display: grid; grid-template-columns: minmax(130px, .55fr) minmax(180px, .75fr) minmax(220px, 1fr); gap: 8px; align-items: end; margin-top: 12px; }
 .synthetic-generate-controls label { color: var(--muted); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
 .synthetic-generate-controls input { display: block; width: 100%; margin-top: 4px; border: 1px solid var(--line-bright); border-radius: 0; padding: 8px; background: var(--paper); color: var(--ink); font-family: var(--font-data); }

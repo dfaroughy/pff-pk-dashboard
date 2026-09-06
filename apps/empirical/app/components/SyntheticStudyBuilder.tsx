@@ -6,13 +6,16 @@ import {
   generateSyntheticCohort,
   previewSyntheticObservationTimes,
   sampleSyntheticModel,
-  withDoseCount,
   type SyntheticAcquisition,
   type SyntheticModelDraw,
 } from "../lib/synthetic-study";
 import type { DoseEvent, GraphDraw, RateDraw } from "../../../synthetic/app/lib/prior";
 
 const INITIAL_MODEL_SEED = 46;
+
+function initialDose(route: GraphDraw["route"]): DoseEvent {
+  return { time: 0, amount: 1, duration: 0, route };
+}
 
 function Latex({ tex, block = false }: { tex: string; block?: boolean }) {
   return <span
@@ -145,10 +148,11 @@ function connectionType(graph: GraphDraw, rate: RateDraw) {
   return `${source} → ${target}`;
 }
 
-function ParameterInput({ label, value, min, disabled = false, onCommit }: {
+function ParameterInput({ label, value, min, max, disabled = false, onCommit }: {
   label: string;
   value: number | null;
   min: number;
+  max?: number;
   disabled?: boolean;
   onCommit: (value: number) => void;
 }) {
@@ -164,6 +168,7 @@ function ParameterInput({ label, value, min, disabled = false, onCommit }: {
     aria-label={label}
     type="number"
     min={min}
+    max={max}
     step="any"
     disabled={disabled}
     value={displayed}
@@ -242,26 +247,23 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
 }) {
   const [modelIndex, setModelIndex] = useState(0);
   const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(INITIAL_MODEL_SEED));
-  const [doseCount, setDoseCount] = useState(1);
-  const [doseOverrides, setDoseOverrides] = useState<Record<number, number>>({});
+  const [doseEvents, setDoseEvents] = useState<DoseEvent[]>(() => [initialDose(model.graph.route)]);
   const [acquisition, setAcquisition] = useState<SyntheticAcquisition>({ family: "exact", shape: "uniform" });
   const [gridDraw, setGridDraw] = useState(0);
   const [openSections, setOpenSections] = useState({ graph: true, kinetics: false, protocol: false });
   const [individuals, setIndividuals] = useState(SYNTHETIC_LIMITS.individuals.default);
   const [observations, setObservations] = useState(SYNTHETIC_LIMITS.observations.default);
-  const activeModel = useMemo(() => {
-    const counted = withDoseCount(model, doseCount);
-    return {
-      ...counted,
-      protocol: {
-        ...counted.protocol,
-        events: counted.protocol.events.map((event, index) => ({
-          ...event,
-          amount: doseOverrides[index] ?? event.amount,
-        })),
-      },
-    };
-  }, [doseCount, doseOverrides, model]);
+  const activeModel = useMemo(() => ({
+    ...model,
+    protocol: {
+      ...model.protocol,
+      events: doseEvents.map((event) => ({ ...event, route: model.graph.route })),
+      multidose: doseEvents.length > 1,
+      infusion: doseEvents.some((event) => event.duration > 0),
+      pattern: doseEvents.length > 1 ? "maintenance" as const : "single" as const,
+      rawProtocolHorizon: 1,
+    },
+  }), [doseEvents, model]);
   const observationPreview = useMemo(() => previewSyntheticObservationTimes(
     model.seed,
     Math.min(individuals, 8),
@@ -273,9 +275,10 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
 
   const drawModel = () => {
     const nextIndex = modelIndex + 1;
+    const nextModel = sampleSyntheticModel(INITIAL_MODEL_SEED + nextIndex);
     setModelIndex(nextIndex);
-    setModel(sampleSyntheticModel(INITIAL_MODEL_SEED + nextIndex));
-    setDoseOverrides({});
+    setModel(nextModel);
+    setDoseEvents([initialDose(nextModel.graph.route)]);
     setGridDraw(0);
     onInvalidate();
   };
@@ -299,8 +302,32 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
     setGridDraw(0);
     onInvalidate();
   };
-  const changeDose = (index: number, amount: number) => {
-    setDoseOverrides((current) => ({ ...current, [index]: amount }));
+  const changeDose = (index: number, field: "time" | "amount" | "duration", value: number) => {
+    setDoseEvents((current) => current.map((event, eventIndex) => {
+      if (eventIndex !== index) return event;
+      if (field === "amount") return { ...event, amount: Math.max(0.001, value) };
+      if (field === "duration") return { ...event, duration: Math.max(0, Math.min(1 - event.time, value)) };
+      const time = index === 0 ? 0 : Math.max(0, Math.min(1, value));
+      return { ...event, time, duration: Math.min(event.duration, 1 - time) };
+    }));
+    onInvalidate();
+  };
+  const addDose = () => {
+    setDoseEvents((current) => [...current, {
+      time: 1 - 0.5 ** current.length,
+      amount: 1,
+      duration: 0,
+      route: model.graph.route,
+    }]);
+    onInvalidate();
+  };
+  const removeDose = (index: number) => {
+    if (index === 0) return;
+    setDoseEvents((current) => current.filter((_, eventIndex) => eventIndex !== index));
+    onInvalidate();
+  };
+  const resetDoses = () => {
+    setDoseEvents([initialDose(model.graph.route)]);
     onInvalidate();
   };
   const resampleGrid = () => {
@@ -350,15 +377,7 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
       </CollapsibleSection>
       <CollapsibleSection title="Dose and observation protocol" open={openSections.protocol} onToggle={() => toggleSection("protocol")}>
         <div className="synthetic-protocol-heading">
-          <div className="synthetic-schedule-controls"><label>Dose schedule
-            <select value={doseCount} onChange={(event) => { setDoseCount(Number(event.target.value)); onInvalidate(); }}>
-              <option value={1}>Single dose</option>
-              <option value={2}>Multiple doses · 2</option>
-              <option value={3}>Multiple doses · 3</option>
-              <option value={4}>Multiple doses · 4</option>
-            </select>
-          </label>
-          <label>Observation schedule
+          <div className="synthetic-schedule-controls"><label>Observation schedule
             <select value={acquisition.family} onChange={(event) => changeAcquisition({ family: event.target.value as SyntheticAcquisition["family"] })}>
               <option value="exact">Exact scheduled</option>
               <option value="pseudo_scheduled">Pseudo-scheduled</option>
@@ -378,10 +397,13 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
         <DoseTimeline events={activeModel.protocol.events} observationTimes={observationPreview.times} />
         <div className="synthetic-dose-editor">{activeModel.protocol.events.map((event, index) => <div className="synthetic-dose-row" key={`dose-${index}`}>
           <span>Dose {index + 1}</span>
-          <span className="synthetic-dose-input">Relative amount <ParameterInput label={`Dose ${index + 1} relative amount`} value={event.amount} min={0.001} onCommit={(value) => changeDose(index, value)} /></span>
-          <span>τ = {event.time.toFixed(3)}</span>
-          <span>{event.duration > 0 ? `infusion · Δτ=${event.duration.toFixed(3)}` : "bolus"}</span>
+          <span className="synthetic-dose-input">Time τ <ParameterInput label={`Dose ${index + 1} time`} value={event.time} min={0} max={1} disabled={index === 0} onCommit={(value) => changeDose(index, "time", value)} /></span>
+          <span className="synthetic-dose-input">Dose d <ParameterInput label={`Dose ${index + 1} relative amount`} value={event.amount} min={0.001} onCommit={(value) => changeDose(index, "amount", value)} /></span>
+          <span className="synthetic-dose-input">Duration Δτ <ParameterInput label={`Dose ${index + 1} duration`} value={event.duration} min={0} max={1 - event.time} onCommit={(value) => changeDose(index, "duration", value)} /></span>
+          <span className="synthetic-dose-kind">{event.duration > 0 ? "infusion" : "bolus"}</span>
+          <button className="icon-button" type="button" aria-label={`Remove dose ${index + 1}`} disabled={index === 0} onClick={() => removeDose(index)}>×</button>
         </div>)}</div>
+        <div className="synthetic-dose-actions"><button className="secondary-button" type="button" onClick={addDose}>+ Add dose</button><button className="secondary-button quiet" type="button" onClick={resetDoses}>Reset protocol</button></div>
       </CollapsibleSection>
     </div>
     <div className="synthetic-generate-controls">
