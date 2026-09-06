@@ -325,6 +325,12 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     abortRequest.current = controller;
     setProgress(1); setRunning(true); setError(""); onResult(null);
     try {
+      const generationOnlyEvent = {
+        time: 0,
+        amount: referenceDose,
+        unit: protocolUnit,
+        route: study.route,
+      };
       const nextResult = await runInference({
         modelId,
         study: {
@@ -333,7 +339,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
           concentrationUnit: study.concentrationUnit, timeUnit: study.timeUnit,
           subjects: study.subjects,
         },
-        doseEvents: modelId === "pythia" ? initialProtocol : protocol.events,
+        doseEvents: modelId === "pythia" ? [generationOnlyEvent] : protocol.events,
         nDraws: Number(draws),
         batchSize: 8,
         solver: { method: "heun", steps: 8 },

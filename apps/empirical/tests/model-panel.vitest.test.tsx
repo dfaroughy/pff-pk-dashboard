@@ -187,6 +187,31 @@ test("Pythia is generation-only and sends the baseline protocol", async () => {
   ]);
 });
 
+test("Pythia ignores an observed multidose protocol and submits a canonical reference event", async () => {
+  const user = userEvent.setup();
+  mocks.runInference.mockResolvedValue({
+    ...response,
+    request: { ...response.request, modelId: "pythia" },
+  });
+  render(<ModelPanel study={{
+    ...study,
+    doseEvents: [
+      { time: 0, amount: 10, unit: "mg", route: "oral" },
+      { time: 4, amount: 10, unit: "mg", route: "oral" },
+      { time: 8, amount: 10, unit: "mg", route: "oral" },
+    ],
+  }} onResult={vi.fn()} />);
+
+  const runButton = screen.getByRole("button", { name: "Run zero-shot inference" });
+  await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
+  await user.click(runButton);
+
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0].doseEvents).toEqual([
+    { time: 0, amount: 10, unit: "mg", route: "oral" },
+  ]);
+});
+
 test("the user can select a reproducible inference seed", async () => {
   const user = userEvent.setup();
   mocks.runInference.mockResolvedValue(response);

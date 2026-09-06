@@ -5,9 +5,10 @@ import {
   SYNTHETIC_LIMITS,
   generateSyntheticCohort,
   sampleSyntheticModel,
+  withDoseCount,
   type SyntheticModelDraw,
 } from "../lib/synthetic-study";
-import type { GraphDraw, RateDraw } from "../../../synthetic/app/lib/prior";
+import type { DoseEvent, GraphDraw, RateDraw } from "../../../synthetic/app/lib/prior";
 
 function Latex({ tex, block = false }: { tex: string; block?: boolean }) {
   return <span
@@ -96,17 +97,18 @@ function CompartmentGraph({ graph }: { graph: GraphDraw }) {
   </svg>;
 }
 
-function balanceEquation(graph: GraphDraw, nodeId: number) {
+export function balanceEquation(graph: GraphDraw, nodeId: number) {
   const symbol = compartmentSymbol(nodeId);
   const incoming = graph.edges.filter((edge) => edge.dst === nodeId).map((edge) => `J_{${compartmentSymbol(edge.src)}${symbol}}`);
   const outgoing = graph.edges.filter((edge) => edge.src === nodeId).map((edge) => `J_{${symbol}${compartmentSymbol(edge.dst)}}`);
   if (graph.elimNodes.includes(nodeId)) outgoing.push(`J_{${symbol}\\emptyset}`);
   const terms = [
-    ...incoming,
-    ...outgoing.map((term) => `-${term}`),
-    ...(Object.hasOwn(graph.doseMap, nodeId) ? [`+u_${symbol}(\\tau)`] : []),
+    ...incoming.map((term) => ({ sign: 1, term })),
+    ...outgoing.map((term) => ({ sign: -1, term })),
+    ...(Object.hasOwn(graph.doseMap, nodeId) ? [{ sign: 1, term: `u_${symbol}(\\tau)` }] : []),
   ];
-  return `\\frac{\\mathrm d X_${symbol}}{\\mathrm d\\tau}=${terms.join("") || "0"}`;
+  const expression = terms.map(({ sign, term }, index) => `${sign < 0 ? "-" : index > 0 ? "+" : ""}${term}`).join("");
+  return `\\frac{\\mathrm d X_${symbol}}{\\mathrm d\\tau}=${expression || "0"}`;
 }
 
 function equationForRate(rate: RateDraw) {
@@ -136,14 +138,48 @@ function KineticTable({ rates }: { rates: RateDraw[] }) {
   </table></div>;
 }
 
+function DoseTimeline({ events }: { events: DoseEvent[] }) {
+  const left = 40;
+  const right = 570;
+  const axisY = 62;
+  const x = (time: number) => left + Math.max(0, Math.min(1, time)) * (right - left);
+  return <svg className="synthetic-dose-timeline" viewBox="0 0 610 105" role="img" aria-label="Dimensionless dose protocol timeline">
+    <defs>
+      <marker id="timeline-arrow" markerWidth="7" markerHeight="7" refX="3.5" refY="6" orient="auto"><path d="M0,0 L7,0 L3.5,7 Z" /></marker>
+    </defs>
+    <line className="timeline-axis" x1={left} y1={axisY} x2={right} y2={axisY} />
+    {[0, 0.25, 0.5, 0.75, 1].map((time) => <g key={time}>
+      <line className="timeline-tick" x1={x(time)} y1={axisY - 4} x2={x(time)} y2={axisY + 5} />
+      <text className="timeline-label" x={x(time)} y={axisY + 19}>{time.toFixed(2)}</text>
+    </g>)}
+    <text className="timeline-axis-title" x={right} y={axisY + 34}>dimensionless time τ</text>
+    {events.map((event, index) => {
+      const start = x(event.time);
+      if (event.duration > 0) {
+        const width = Math.max(5, x(event.time + event.duration) - start);
+        return <g key={`${event.time}-${index}`}>
+          <rect className="timeline-infusion" x={start} y={25} width={width} height={axisY - 25} />
+          <text className="timeline-event-label" x={start + width / 2} y={18}>{event.amount.toFixed(2)}×</text>
+        </g>;
+      }
+      return <g key={`${event.time}-${index}`}>
+        <line className="timeline-bolus" x1={start} y1={22} x2={start} y2={axisY - 7} markerEnd="url(#timeline-arrow)" />
+        <text className="timeline-event-label" x={start} y={15}>{event.amount.toFixed(2)}×</text>
+      </g>;
+    })}
+  </svg>;
+}
+
 export function SyntheticStudyBuilder({ onGenerate, onClear }: {
   onGenerate: (study: Study) => void;
   onClear: () => void;
 }) {
   const [modelIndex, setModelIndex] = useState(0);
   const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(43));
+  const [doseCount, setDoseCount] = useState(1);
   const [individuals, setIndividuals] = useState(SYNTHETIC_LIMITS.individuals.default);
   const [observations, setObservations] = useState(SYNTHETIC_LIMITS.observations.default);
+  const activeModel = useMemo(() => withDoseCount(model, doseCount), [doseCount, model]);
   const equations = useMemo(() => model.graph.nodes.map((node) => balanceEquation(model.graph, node.id)), [model.graph]);
   const uniqueRateForms = useMemo(() => {
     const representatives = new Map<string, RateDraw>();
@@ -157,7 +193,7 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
     setModel(sampleSyntheticModel(43 + nextIndex));
     onClear();
   };
-  const generate = () => onGenerate(generateSyntheticCohort(model, individuals, observations));
+  const generate = () => onGenerate(generateSyntheticCohort(activeModel, individuals, observations));
   const changeIndividuals = (value: number) => {
     setIndividuals(Math.max(SYNTHETIC_LIMITS.individuals.min, Math.min(SYNTHETIC_LIMITS.individuals.max, value)));
     onClear();
@@ -179,7 +215,7 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
           <div><dt>Route</dt><dd>{model.graph.route}</dd></div>
           <div><dt>Compartments</dt><dd>{model.graph.nodes.length}</dd></div>
           <div><dt>Fluxes</dt><dd>{model.kinetics.rates.length}</dd></div>
-          <div><dt>Protocol</dt><dd>{model.protocol.pattern}</dd></div>
+          <div><dt>Protocol</dt><dd>{activeModel.protocol.pattern}</dd></div>
         </dl>
       </div>
       <div className="synthetic-equations">
@@ -195,8 +231,19 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
       <KineticTable rates={model.kinetics.rates} />
     </div>
     <div className="synthetic-protocol">
-      <h3>Dose protocol</h3>
-      <div className="synthetic-event-list">{model.protocol.events.map((event, index) => <span key={`${event.time}-${index}`}><b>{event.amount.toFixed(2)}×</b> at τ={event.time.toFixed(2)}{event.duration > 0 ? ` · infusion Δτ=${event.duration.toFixed(2)}` : " · bolus"}</span>)}</div>
+      <div className="synthetic-protocol-heading">
+        <h3>Dose protocol</h3>
+        <label>Schedule
+          <select value={doseCount} onChange={(event) => { setDoseCount(Number(event.target.value)); onClear(); }}>
+            <option value={1}>Single dose</option>
+            <option value={2}>Multiple doses · 2</option>
+            <option value={3}>Multiple doses · 3</option>
+            <option value={4}>Multiple doses · 4</option>
+          </select>
+        </label>
+      </div>
+      <DoseTimeline events={activeModel.protocol.events} />
+      <div className="synthetic-event-list">{activeModel.protocol.events.map((event, index) => <span key={`${event.time}-${index}`}><b>{event.amount.toFixed(2)}×</b> at τ={event.time.toFixed(2)}{event.duration > 0 ? ` · infusion Δτ=${event.duration.toFixed(2)}` : " · bolus"}</span>)}</div>
     </div>
     <div className="synthetic-generate-controls">
       <label>Individuals
