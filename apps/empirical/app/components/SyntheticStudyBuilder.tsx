@@ -236,9 +236,9 @@ function DoseTimeline({ events, observationTimes }: { events: DoseEvent[]; obser
   </svg>;
 }
 
-export function SyntheticStudyBuilder({ onGenerate, onClear }: {
+export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
   onGenerate: (study: Study) => void;
-  onClear: () => void;
+  onInvalidate: () => void;
 }) {
   const [modelIndex, setModelIndex] = useState(0);
   const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(INITIAL_MODEL_SEED));
@@ -277,7 +277,7 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
     setModel(sampleSyntheticModel(INITIAL_MODEL_SEED + nextIndex));
     setDoseOverrides({});
     setGridDraw(0);
-    onClear();
+    onInvalidate();
   };
   const generate = () => onGenerate(generateSyntheticCohort(activeModel, individuals, observations, acquisition, gridDraw));
   const changeRate = (id: string, patch: Partial<RateDraw>) => {
@@ -292,37 +292,36 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
         },
       };
     });
-    onClear();
+    onInvalidate();
   };
   const changeAcquisition = (patch: Partial<SyntheticAcquisition>) => {
     setAcquisition((current) => ({ ...current, ...patch }));
     setGridDraw(0);
-    onClear();
+    onInvalidate();
   };
   const changeDose = (index: number, amount: number) => {
     setDoseOverrides((current) => ({ ...current, [index]: amount }));
-    onClear();
+    onInvalidate();
   };
   const resampleGrid = () => {
     setGridDraw((current) => current + 1);
-    onClear();
+    onInvalidate();
   };
   const toggleSection = (section: keyof typeof openSections) => {
     setOpenSections((current) => ({ ...current, [section]: !current[section] }));
   };
   const changeIndividuals = (value: number) => {
     setIndividuals(Math.max(SYNTHETIC_LIMITS.individuals.min, Math.min(SYNTHETIC_LIMITS.individuals.max, value)));
-    onClear();
+    onInvalidate();
   };
   const changeObservations = (value: number) => {
     setObservations(Math.max(SYNTHETIC_LIMITS.observations.min, Math.min(SYNTHETIC_LIMITS.observations.max, value)));
-    onClear();
+    onInvalidate();
   };
 
   return <article className="card synthetic-builder">
     <div className="section-heading synthetic-builder-heading">
-      <div><p className="synthetic-kicker">Interactive prior draw · seed {model.seed}</p><h2>Synthetic cohort model</h2></div>
-      <button className="secondary-button synthetic-redraw" type="button" onClick={drawModel}>Draw another model</button>
+      <h2>Synthetic cohort model</h2>
     </div>
     <div className="synthetic-accordion-stack">
       <CollapsibleSection title="Compartment graph" open={openSections.graph} onToggle={() => toggleSection("graph")}>
@@ -335,6 +334,7 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
               <div><dt>Fluxes</dt><dd>{model.kinetics.rates.length}</dd></div>
               <div><dt>Protocol</dt><dd>{activeModel.protocol.pattern}</dd></div>
             </dl>
+            <div className="synthetic-graph-actions"><button className="secondary-button" type="button" onClick={drawModel}>[draw graph]</button></div>
           </div>
           <div className="synthetic-equations">
             <h3>Mass balances</h3>
@@ -351,7 +351,7 @@ export function SyntheticStudyBuilder({ onGenerate, onClear }: {
       <CollapsibleSection title="Dose and observation protocol" open={openSections.protocol} onToggle={() => toggleSection("protocol")}>
         <div className="synthetic-protocol-heading">
           <div className="synthetic-schedule-controls"><label>Dose schedule
-            <select value={doseCount} onChange={(event) => { setDoseCount(Number(event.target.value)); onClear(); }}>
+            <select value={doseCount} onChange={(event) => { setDoseCount(Number(event.target.value)); onInvalidate(); }}>
               <option value={1}>Single dose</option>
               <option value={2}>Multiple doses · 2</option>
               <option value={3}>Multiple doses · 3</option>

@@ -204,8 +204,6 @@ button { cursor: pointer; }
 
 .synthetic-builder { min-width: 0; padding: 18px; }
 .synthetic-builder-heading { align-items: center; margin-bottom: 13px; }
-.synthetic-kicker { margin: 0 0 4px; color: var(--cyan); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
-.synthetic-redraw { margin: 0; }
 .synthetic-accordion-stack { display: grid; gap: 7px; }
 .synthetic-accordion { min-width: 0; border: 1px solid var(--line); background: var(--panel-raised); }
 .synthetic-accordion > h3 { margin: 0; }
@@ -233,6 +231,8 @@ button { cursor: pointer; }
 .synthetic-facts div:first-child { border-left: 0; }
 .synthetic-facts dt, .synthetic-equations h3, .synthetic-parameter-section h3, .synthetic-protocol h3 { color: var(--muted); font-family: var(--font-data); font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .synthetic-facts dd { margin: 4px 0 0; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
+.synthetic-graph-actions { display: flex; justify-content: flex-end; border-top: 1px solid var(--line); padding: 8px 4px 2px; }
+.synthetic-graph-actions .secondary-button { margin: 0; }
 .synthetic-equations { min-width: 0; max-width: 100%; overflow: hidden; padding: 13px 15px; }
 .synthetic-equations h3, .synthetic-parameter-section h3, .synthetic-protocol h3 { margin: 0 0 8px; }
 .synthetic-equations h3:not(:first-child) { margin-top: 16px; }
@@ -294,6 +294,9 @@ button { cursor: pointer; }
   text-transform: uppercase;
 }
 .results-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stale-results { position: relative; }
+.stale-results .card { opacity: .34; pointer-events: none; filter: saturate(.55); transition: opacity .18s ease; }
+.stale-results::after { position: absolute; z-index: 2; top: 13px; left: 50%; border: 1px solid var(--line-bright); padding: 5px 8px; background: var(--paper); color: var(--muted); content: "Previous cohort · generate to update"; font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; transform: translateX(-50%); }
 .empty-plot { display: grid; aspect-ratio: 1.618 / 1; padding: 30px 22px 52px 62px; }
 .distribution-card .empty-plot { aspect-ratio: 720 / 750; }
 .empty-plot-frame { position: relative; display: grid; place-items: center; border-left: 1px solid var(--line-bright); border-bottom: 1px solid var(--line-bright); background: repeating-linear-gradient(to bottom, transparent 0, transparent calc(25% - 1px), var(--line) 25%); }

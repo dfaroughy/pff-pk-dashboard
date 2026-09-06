@@ -405,11 +405,11 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   </section>;
 }
 
-function InactiveModelPanel() {
+function InactiveModelPanel({ stale = false }: { stale?: boolean }) {
   return <section className="model-panel card inactive-model-panel">
     <div className="section-heading">
       <h2>Pythia-PK</h2>
-      <span className="status">Awaiting cohort</span>
+      <span className="status">{stale ? "Cohort changed" : "Awaiting cohort"}</span>
     </div>
     <label className="model-select">Models
       <select aria-label="Inactive model selection" value="pythia" disabled><option>Pythia</option></select>
@@ -418,7 +418,7 @@ function InactiveModelPanel() {
       <label>Generated individuals <input type="number" value="20" disabled readOnly /></label>
       <label>Random seed <input type="number" value="43" disabled readOnly /></label>
     </div>
-    <p className="model-warning">Generate the synthetic cohort to activate zero-shot inference.</p>
+    <p className="model-warning">{stale ? "Generate the edited cohort to reactivate zero-shot inference." : "Generate the synthetic cohort to activate zero-shot inference."}</p>
     <div className="inference-actions"><button type="button" className="primary-button inference-progress" disabled><span className="inference-progress-label">Run zero-shot inference</span></button></div>
   </section>;
 }
@@ -493,6 +493,7 @@ export function Dashboard() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [syntheticMode, setSyntheticMode] = useState(false);
   const [syntheticStudy, setSyntheticStudy] = useState<Study | null>(null);
+  const [syntheticStale, setSyntheticStale] = useState(false);
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
   const [vpcLogY, setVpcLogY] = useState(false);
   const [trajectoryLogY, setTrajectoryLogY] = useState(false);
@@ -522,11 +523,13 @@ export function Dashboard() {
         onSynthetic={() => {
           setSyntheticMode(true);
           setSyntheticStudy(null);
+          setSyntheticStale(false);
           setModelResult(null);
           setShowStudyContext(true);
         }}
         onSelect={(study) => {
           setSyntheticMode(false);
+          setSyntheticStale(false);
           setSelectedId(study.id);
           setModelResult(null);
           setShowStudyContext(true);
@@ -542,9 +545,9 @@ export function Dashboard() {
             <div><dt>Matrix</dt><dd>{activeStudy?.medium || (syntheticMode ? "Central compartment" : "Not reported")}</dd></div>
           </dl>
         </section>
-        <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
+        <div className="toolbar"><button className={showStudyContext ? "overlay-toggle active" : "overlay-toggle"} type="button" aria-pressed={showStudyContext} disabled={!modelResult || (syntheticMode && syntheticStale)} onClick={() => setShowStudyContext(!showStudyContext)}>{showStudyContext ? "Hide study context" : "Show study context"}</button></div>
         {activeStudy ? <>
-          <section className="results-grid">
+          <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">
               <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} showStudyContext={showStudyContext} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
               {modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical={showStudyContext} /> : <VpcChart study={activeStudy} logY={vpcLogY} />}
@@ -562,10 +565,10 @@ export function Dashboard() {
         </> : <SyntheticResultsPlaceholder />}
         {syntheticMode ? <section className="overview-grid synthetic-overview">
           <SyntheticStudyBuilder
-            onClear={() => { setSyntheticStudy(null); setModelResult(null); setShowStudyContext(true); }}
-            onGenerate={(study) => { setSyntheticStudy(study); setModelResult(null); setShowStudyContext(true); }}
+            onInvalidate={() => { if (syntheticStudy) setSyntheticStale(true); }}
+            onGenerate={(study) => { setSyntheticStudy(study); setSyntheticStale(false); setModelResult(null); setShowStudyContext(true); }}
           />
-          {syntheticStudy ? <ModelPanel key={syntheticStudy.id} study={syntheticStudy} onResult={setModelResult} /> : <InactiveModelPanel />}
+          {syntheticStudy && !syntheticStale ? <ModelPanel key={syntheticStudy.id} study={syntheticStudy} onResult={setModelResult} /> : <InactiveModelPanel stale={syntheticStale} />}
         </section> : <section className="overview-grid">
           <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} /></article>
           <ModelPanel key={selected.id} study={selected} onResult={setModelResult} />
@@ -575,6 +578,7 @@ export function Dashboard() {
     {uploadOpen && <DatasetUploadDialog onClose={() => setUploadOpen(false)} onStudy={(study) => {
       setCustomStudy(study);
       setSyntheticMode(false);
+      setSyntheticStale(false);
       setSelectedId(study.id);
       setModelResult(null);
       setShowStudyContext(true);
