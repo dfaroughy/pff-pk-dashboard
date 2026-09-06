@@ -60,7 +60,8 @@ DEFAULT_ALLOWED_ORIGINS = {
     "https://dfaroughy.github.io",
 }
 DEFAULT_GENERATED_INDIVIDUALS = 20
-MAX_GENERATED_INDIVIDUALS = 30
+MAX_GENERATED_INDIVIDUALS = 100
+MAX_DOSE_GENERATED_INDIVIDUALS = 30
 DEFAULT_FLOW_STEPS = 8
 MAX_FLOW_STEPS = 16
 MAX_CONTEXT_INDIVIDUALS = 128
@@ -322,7 +323,9 @@ class ModelRuntime:
             request.get("nDraws", DEFAULT_GENERATED_INDIVIDUALS),
             "nDraws",
             1,
-            MAX_GENERATED_INDIVIDUALS,
+            MAX_GENERATED_INDIVIDUALS
+            if self.model_id == PYTHIA_MODEL
+            else MAX_DOSE_GENERATED_INDIVIDUALS,
         )
         solver = request.get("solver") or {}
         method = str(solver.get("method", "heun"))

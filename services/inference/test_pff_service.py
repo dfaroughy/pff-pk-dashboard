@@ -8,6 +8,7 @@ from services.inference.pff_service import (
     DEFAULT_FLOW_STEPS,
     DEFAULT_GENERATED_INDIVIDUALS,
     MAX_CONTEXT_INDIVIDUALS,
+    MAX_DOSE_GENERATED_INDIVIDUALS,
     MAX_FLOW_STEPS,
     MAX_GENERATED_INDIVIDUALS,
     bounded_integer,
@@ -36,11 +37,14 @@ class RequestValidationTests(unittest.TestCase):
 
     def test_public_inference_limits_are_conservative(self) -> None:
         self.assertEqual(DEFAULT_GENERATED_INDIVIDUALS, 20)
-        self.assertEqual(MAX_GENERATED_INDIVIDUALS, 30)
+        self.assertEqual(MAX_GENERATED_INDIVIDUALS, 100)
+        self.assertEqual(MAX_DOSE_GENERATED_INDIVIDUALS, 30)
         self.assertEqual(DEFAULT_FLOW_STEPS, 8)
         self.assertEqual(MAX_FLOW_STEPS, 16)
+        with self.assertRaisesRegex(ValueError, "between 1 and 100"):
+            bounded_integer(101, "nDraws", 1, MAX_GENERATED_INDIVIDUALS)
         with self.assertRaisesRegex(ValueError, "between 1 and 30"):
-            bounded_integer(31, "nDraws", 1, MAX_GENERATED_INDIVIDUALS)
+            bounded_integer(31, "nDraws", 1, MAX_DOSE_GENERATED_INDIVIDUALS)
         with self.assertRaisesRegex(ValueError, "between 1 and 16"):
             bounded_integer(17, "solver steps", 1, MAX_FLOW_STEPS)
 

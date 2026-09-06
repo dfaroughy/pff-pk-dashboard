@@ -400,6 +400,7 @@ button { cursor: pointer; }
 .inference-progress { position: relative; isolation: isolate; overflow: hidden; background: var(--panel-raised); color: var(--ink); transition: border-color .2s ease; }
 .inference-progress:hover:not(:disabled) { border-color: var(--acid-fill); background: var(--panel-raised); color: var(--ink); }
 .inference-progress:disabled { border-color: var(--line-bright); background: var(--panel-raised); color: var(--muted); }
+.dashboard-shell[data-theme="dark"] .inference-progress[data-filled="true"] { color: #142015; }
 .inference-progress-fill { position: absolute; z-index: 0; inset: 0 auto 0 0; background: var(--acid-fill); transition: width .18s linear; }
 .inference-progress-label { position: relative; z-index: 1; }
 .model-warning, .model-error { border-left: 2px solid; padding: 8px 9px; font-size: 9px; line-height: 1.4; }

@@ -255,10 +255,11 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [seed, setSeed] = useState("43");
+  const maxDraws = modelId === "pythia" ? 100 : 30;
   const eligible = study.subjects.filter((subject) => subject.points.length >= 2).length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
-  const drawsError = validateInteger(draws, 1, 30);
+  const drawsError = validateInteger(draws, 1, maxDraws);
   const seedError = validateInteger(seed, 0, 2**31 - 1);
   const controlsValid = (modelId === "pythia" || protocol.valid) && !drawsError && !seedError;
   const selectedStatus = status?.models?.[modelId]
@@ -314,6 +315,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const selectModel = (nextModel: ModelId) => {
     if (nextModel === modelId) return;
     setModelId(nextModel);
+    if (nextModel === "pythia_dose" && Number(draws) > 30) setDraws("30");
     setEvents(resetDrafts());
     invalidate();
   };
@@ -390,7 +392,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     </div>
     <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div></>}
     <div className="model-controls">
-      <label className={drawsError ? "invalid" : ""}>Generated individuals <input aria-invalid={Boolean(drawsError)} type="number" min="1" max="30" step="1" value={draws} onChange={(event) => { setDraws(event.target.value); invalidate(); }} />{drawsError && <small className="field-error">{drawsError}</small>}</label>
+      <label className={drawsError ? "invalid" : ""}>Generated individuals <input aria-invalid={Boolean(drawsError)} type="number" min="1" max={maxDraws} step="1" value={draws} onChange={(event) => { setDraws(event.target.value); invalidate(); }} />{drawsError && <small className="field-error">{drawsError}</small>}</label>
       <label className={seedError ? "invalid" : ""}>Random seed <input aria-invalid={Boolean(seedError)} type="number" min="0" max={2**31 - 1} step="1" value={seed} onChange={(event) => { setSeed(event.target.value); invalidate(); }} />{seedError && <small className="field-error">{seedError}</small>}</label>
     </div>
     {!eligible && <p className="model-warning">Interactive Pythia-PK inference requires at least two individual trajectories.</p>}
@@ -399,7 +401,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     {modelId === "pythia_dose" && eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
     <div className="inference-actions">
-      <button type="button" className="primary-button inference-progress" aria-label={running ? "Running zero-shot inference" : "Run zero-shot inference"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
+      <button type="button" className="primary-button inference-progress" data-filled={progress >= 50 ? "true" : undefined} aria-label={running ? "Running zero-shot inference" : "Run zero-shot inference"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
         <span className="inference-progress-fill" role="progressbar" aria-label="Inference progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} style={{ width: `${progress}%` }} />
         <span className="inference-progress-label">{running ? "Running zero-shot inference…" : "Run zero-shot inference"}</span>
       </button>

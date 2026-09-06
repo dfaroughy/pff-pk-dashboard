@@ -143,13 +143,26 @@ test("exposes only conservative public inference controls", async () => {
 
   const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
   expect(draws.valueAsNumber).toBe(20);
-  expect(draws.max).toBe("30");
+  expect(draws.max).toBe("100");
   expect(screen.queryByLabelText("Integrator")).toBeNull();
   expect(screen.queryByLabelText("Integration steps")).toBeNull();
   expect(screen.queryByLabelText("Checkpoint")).toBeNull();
   expect((screen.getByLabelText("Random seed") as HTMLInputElement).valueAsNumber).toBe(43);
   expect(screen.queryByRole("button", { name: "Resample" })).toBeNull();
   expect((screen.getByLabelText("Models") as HTMLSelectElement).value).toBe("pythia");
+});
+
+test("uses model-specific generation limits", async () => {
+  const user = userEvent.setup();
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
+  const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
+  await user.clear(draws);
+  await user.type(draws, "100");
+  expect(draws.max).toBe("100");
+
+  await user.selectOptions(screen.getByLabelText("Models"), "pythia_dose");
+  expect(draws.max).toBe("30");
+  expect(draws.valueAsNumber).toBe(30);
 });
 
 test("renders the server-side Pharmpy VPC summary", () => {

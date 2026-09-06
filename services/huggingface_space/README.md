@@ -24,8 +24,9 @@ Their checkpoints, configurations and capability manifests remain separate.
 The service runs on CPU Basic hardware. It does not use ZeroGPU and therefore
 does not consume visitors' daily GPU quota.
 
-Public requests generate 20 individuals by default and are capped at 30
-individuals. The demo fixes flow integration to eight Heun steps; solver
+Public requests generate 20 individuals by default. Generation-only Pythia
+requests are capped at 100 individuals; Pythia-Dose requests retain the
+30-individual cap. The demo fixes flow integration to eight Heun steps; solver
 controls are not exposed. These limits are enforced by both the dashboard and
 the inference service. Pharmpy computes each displayed VPC from that same
 generated pool using design-matched resampled cohorts and equal-number time
