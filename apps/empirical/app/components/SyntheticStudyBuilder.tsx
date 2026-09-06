@@ -2,6 +2,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import katex from "katex";
 import type { Study } from "../lib/types";
 import {
+  SYNTHETIC_INITIAL_ACQUISITION,
+  SYNTHETIC_INITIAL_SEED,
   SYNTHETIC_LIMITS,
   generateSyntheticCohort,
   previewSyntheticObservationTimes,
@@ -10,8 +12,6 @@ import {
   type SyntheticModelDraw,
 } from "../lib/synthetic-study";
 import type { DoseEvent, GraphDraw, RateDraw } from "../../../synthetic/app/lib/prior";
-
-const INITIAL_MODEL_SEED = 46;
 
 function initialDose(route: GraphDraw["route"]): DoseEvent {
   return { time: 0, amount: 1, duration: 0, route };
@@ -246,9 +246,9 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
   onInvalidate: () => void;
 }) {
   const [modelIndex, setModelIndex] = useState(0);
-  const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(INITIAL_MODEL_SEED));
+  const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(SYNTHETIC_INITIAL_SEED));
   const [doseEvents, setDoseEvents] = useState<DoseEvent[]>(() => [initialDose(model.graph.route)]);
-  const [acquisition, setAcquisition] = useState<SyntheticAcquisition>({ family: "exact", shape: "uniform" });
+  const [acquisition, setAcquisition] = useState<SyntheticAcquisition>(SYNTHETIC_INITIAL_ACQUISITION);
   const [gridDraw, setGridDraw] = useState(0);
   const [openSections, setOpenSections] = useState({ graph: true, kinetics: false, protocol: false });
   const [individuals, setIndividuals] = useState(SYNTHETIC_LIMITS.individuals.default);
@@ -275,7 +275,7 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
 
   const drawModel = () => {
     const nextIndex = modelIndex + 1;
-    const nextModel = sampleSyntheticModel(INITIAL_MODEL_SEED + nextIndex);
+    const nextModel = sampleSyntheticModel(SYNTHETIC_INITIAL_SEED + nextIndex);
     setModelIndex(nextIndex);
     setModel(nextModel);
     setDoseEvents([initialDose(nextModel.graph.route)]);

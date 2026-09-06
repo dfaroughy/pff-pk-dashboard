@@ -8,6 +8,7 @@ import { dashboardRuntimeConfig } from "../lib/runtime-config";
 import type { Corpus, Study } from "../lib/types";
 import { ModelTrajectoryChart, ModelVpcChart, PkDistributionChart, TrajectoryChart, VpcChart } from "./StudyCharts";
 import { SyntheticStudyBuilder } from "./SyntheticStudyBuilder";
+import { generateInitialSyntheticCohort } from "../lib/synthetic-study";
 
 type WikipediaIntro = { paragraph: string; title: string; url: string };
 
@@ -522,7 +523,7 @@ export function Dashboard() {
         onUpload={() => setUploadOpen(true)}
         onSynthetic={() => {
           setSyntheticMode(true);
-          setSyntheticStudy(null);
+          setSyntheticStudy(generateInitialSyntheticCohort());
           setSyntheticStale(false);
           setModelResult(null);
           setShowStudyContext(true);

@@ -16,9 +16,15 @@ import {
 } from "../../../synthetic/app/lib/prior";
 
 export const SYNTHETIC_LIMITS = {
-  observations: { min: 2, max: 20, default: 16 },
+  observations: { min: 2, max: 20, default: 8 },
   individuals: { min: 2, max: 16, default: 10 },
 } as const;
+
+export const SYNTHETIC_INITIAL_SEED = 46;
+export const SYNTHETIC_INITIAL_ACQUISITION: SyntheticAcquisition = {
+  family: "exact",
+  shape: "early",
+};
 
 export type SyntheticModelDraw = {
   seed: number;
@@ -74,6 +80,29 @@ export function sampleSyntheticModel(seed: number): SyntheticModelDraw {
     kinetics: sampleKinetics(graph, rng),
     protocol: sampleProtocol(graph, rng),
   };
+}
+
+export function withInitialDose(model: SyntheticModelDraw): SyntheticModelDraw {
+  return {
+    ...model,
+    protocol: {
+      ...model.protocol,
+      events: [{ time: 0, amount: 1, duration: 0, route: model.graph.route }],
+      multidose: false,
+      infusion: false,
+      pattern: "single",
+      rawProtocolHorizon: 1,
+    },
+  };
+}
+
+export function generateInitialSyntheticCohort(): Study {
+  return generateSyntheticCohort(
+    withInitialDose(sampleSyntheticModel(SYNTHETIC_INITIAL_SEED)),
+    SYNTHETIC_LIMITS.individuals.default,
+    SYNTHETIC_LIMITS.observations.default,
+    SYNTHETIC_INITIAL_ACQUISITION,
+  );
 }
 
 export function generateSyntheticCohort(

@@ -114,7 +114,7 @@ test("uses the selected acquisition scheduler for preview and generation", async
   expect(study.subjects[0].points.map(([time]: [number, number]) => time)).not.toEqual(
     study.subjects[1].points.map(([time]: [number, number]) => time),
   );
-  expect(study.observedVpc).toHaveLength(16);
+  expect(study.observedVpc).toHaveLength(8);
 });
 
 test("resamples the observation grid and uses the previewed mesh for generation", () => {
@@ -179,10 +179,13 @@ test("keeps the previous synthetic plots visible but faded until regeneration", 
     .find((button) => button.classList.contains("synthetic-data-button"));
   expect(syntheticButton).toBeTruthy();
   await user.click(syntheticButton as HTMLButtonElement);
-  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
   const chart = await screen.findByRole("img", { name: "Observed visual predictive check for Synthetic cohort" });
   const results = chart.closest(".results-grid") as HTMLElement;
   expect(results.dataset.stale).toBeUndefined();
+  expect((screen.getByLabelText(/Individuals/) as HTMLInputElement).valueAsNumber).toBe(10);
+  expect((screen.getByLabelText(/Observations per individual/) as HTMLInputElement).valueAsNumber).toBe(8);
+  await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
+  expect((screen.getByLabelText("Time weighting") as HTMLSelectElement).value).toBe("early");
 
   fireEvent.change(screen.getByLabelText(/Individuals/), { target: { value: "11" } });
   expect(screen.getByRole("img", { name: "Observed visual predictive check for Synthetic cohort" })).toBeTruthy();
