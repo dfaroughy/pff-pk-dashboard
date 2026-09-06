@@ -470,7 +470,7 @@ function VpcCaption({ study, result }: {
     Visual predictive check for {study.drug} with N={study.subjects.length} individuals. The magenta curve is the observed median; cyan curves are the observed 5th and 95th percentiles.
   </p>;
   return <p className="plot-caption">
-    Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. The observed median is magenta and its 5th and 95th percentiles are cyan. Shaded regions are 90% simulation intervals estimated with Pharmpy.
+    Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. The observed median is magenta and its 5th and 95th percentiles are cyan. Shaded regions are 90% simulation intervals from resampled generated cohorts.
   </p>;
 }
 

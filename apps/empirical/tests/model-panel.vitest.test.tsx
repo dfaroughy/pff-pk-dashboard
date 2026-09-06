@@ -53,6 +53,7 @@ const response: InferenceResponse = {
   generatedConcentration: [[1, 0.1]],
   vpc: {
     method: "pharmpy",
+    timeBinning: "equal_number",
     generatedIndividuals: 1,
     simulatedCohortReplicates: 200,
     requestedBins: 10,
@@ -167,7 +168,7 @@ test("uses model-specific generation limits", async () => {
 
 test("renders the server-side Pharmpy VPC summary", () => {
   render(<ModelVpcChart result={response} study={study} logY={false} showEmpirical={false} />);
-  const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check computed with Pharmpy" });
+  const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check" });
   expect(chart.querySelectorAll("g[clip-path] > path")).toHaveLength(3);
   expect(chart.querySelectorAll("g[clip-path] > g")).toHaveLength(0);
   expect(chart.querySelectorAll("circle")).toHaveLength(0);
@@ -177,7 +178,7 @@ test("renders the server-side Pharmpy VPC summary", () => {
 
 test("keeps the observed VPC on its original observation-time mesh after inference", () => {
   render(<ModelVpcChart result={response} study={study} logY={false} showEmpirical />);
-  const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check computed with Pharmpy" });
+  const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check" });
   const empiricalMarkers = [...chart.querySelectorAll("g[clip-path] circle")];
   expect(empiricalMarkers).toHaveLength(6);
   expect(empiricalMarkers.at(-1)?.getAttribute("cx")).toBe("698");

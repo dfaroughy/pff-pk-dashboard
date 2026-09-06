@@ -23,6 +23,7 @@ export type InferenceResponse = {
   generatedConcentration: number[][];
   vpc: {
     method: "pharmpy";
+    timeBinning?: "exact_schedule" | "equal_number";
     generatedIndividuals: number;
     simulatedCohortReplicates: number;
     requestedBins: number;

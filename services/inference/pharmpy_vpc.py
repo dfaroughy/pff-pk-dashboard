@@ -76,6 +76,55 @@ def _finite_float(value: Any, label: str) -> float:
     return result
 
 
+def _rank_quantile(values: np.ndarray, probability: float, axis: int) -> np.ndarray:
+    """Match Pharmpy's nearest-rank quantile convention along one axis."""
+    ordered = np.sort(values, axis=axis)
+    index = int(np.floor(probability * (values.shape[axis] - 1) + 0.5))
+    return np.take(ordered, index, axis=axis)
+
+
+def _exact_schedule_summary(
+    times: np.ndarray,
+    schedule: np.ndarray,
+    observed_values: np.ndarray,
+    simulation_values: np.ndarray,
+) -> list[dict[str, Any]]:
+    """Evaluate a VPC at each time when every individual shares one schedule."""
+    scheduled_times = times[schedule]
+    replicates, individuals, observations = simulation_values.shape
+    pooled = simulation_values.reshape(replicates * individuals, observations)
+    quantiles = {"q05": 0.05, "q50": 0.50, "q95": 0.95}
+    observed = {
+        key: _rank_quantile(observed_values, probability, axis=0)
+        for key, probability in quantiles.items()
+    }
+    simulated = {}
+    for key, probability in quantiles.items():
+        replicate_quantiles = _rank_quantile(simulation_values, probability, axis=1)
+        ordered = np.sort(replicate_quantiles, axis=0)
+        interval_index = int(np.floor(0.05 * (replicates - 1) + 0.5))
+        simulated[key] = {
+            "center": _rank_quantile(pooled, probability, axis=0),
+            "lower": ordered[interval_index],
+            "upper": ordered[replicates - interval_index - 1],
+        }
+
+    return [
+        {
+            "time": float(time),
+            "timeLower": float(time),
+            "timeUpper": float(time),
+            "nObservations": int(individuals),
+            "observed": {key: float(values[index]) for key, values in observed.items()},
+            "simulated": {
+                key: {bound: float(values[bound][index]) for bound in ("center", "lower", "upper")}
+                for key, values in simulated.items()
+            },
+        }
+        for index, time in enumerate(scheduled_times)
+    ]
+
+
 def pharmpy_vpc_summary(
     generated_concentration: np.ndarray,
     query_time: np.ndarray,
@@ -90,7 +139,9 @@ def pharmpy_vpc_summary(
     The neural model is evaluated only for the rows in ``generated_concentration``.
     Each inexpensive simulation replicate then samples one generated curve for each
     empirical individual and evaluates it on that individual's observation schedule.
-    Pharmpy owns equal-number binning and all observed/simulated quantiles.
+    Synchronized schedules are evaluated at their exact observation times.
+    Pharmpy owns equal-number binning for irregular schedules. Both paths use
+    Pharmpy's nearest-rank quantile and 90% simulation-interval conventions.
     """
     pool = np.asarray(generated_concentration, dtype=np.float64)
     times = np.asarray(query_time, dtype=np.float64)
@@ -148,6 +199,33 @@ def pharmpy_vpc_summary(
             "DV": simulation_values.reshape(-1),
         }
     ).set_index(["SIM", "index"])
+
+    synchronized = all(
+        len(indices) == len(schedules[0]) and np.array_equal(indices, schedules[0])
+        for indices in schedules[1:]
+    )
+    if synchronized:
+        observations = len(schedules[0])
+        observed_values = np.asarray(
+            [[point[1] for point in curve] for curve in cohort["subjects"].values()],
+            dtype=np.float64,
+        )
+        points = _exact_schedule_summary(
+            times,
+            schedules[0],
+            observed_values,
+            simulation_values.reshape(replicates, len(schedules), observations),
+        )
+        return {
+            "method": "pharmpy",
+            "timeBinning": "exact_schedule",
+            "generatedIndividuals": int(len(pool)),
+            "simulatedCohortReplicates": int(replicates),
+            "requestedBins": int(requested_bins),
+            "effectiveBins": int(observations),
+            "points": points,
+        }
+
     statistics, bins = _statistics_frame(
         observed,
         simulations,
@@ -188,6 +266,7 @@ def pharmpy_vpc_summary(
         )
     return {
         "method": "pharmpy",
+        "timeBinning": "equal_number",
         "generatedIndividuals": int(len(pool)),
         "simulatedCohortReplicates": int(replicates),
         "requestedBins": int(requested_bins),

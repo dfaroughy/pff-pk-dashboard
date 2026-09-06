@@ -151,7 +151,7 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
     logY={logY}
     xLabel={`Time (${result.units.time})`}
     yLabel={`Concentration (${result.units.concentration})`}
-    ariaLabel="Pythia-PK visual predictive check computed with Pharmpy"
+    ariaLabel="Pythia-PK visual predictive check"
   />;
 }
 

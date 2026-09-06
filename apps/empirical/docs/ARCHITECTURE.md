@@ -31,12 +31,13 @@ The shared Python service in `services/inference/` validates units and dose even
 request, and runs `pff_pk` with PyTorch. It loads the checkpoint once, generates
 draws, writes a persistent JSON artifact, and returns its identifier. The
 public dashboard fixes integration to eight Heun steps and exposes the number
-of generated individuals (20 by default, at most 30) and the reproducible
-random seed (43 by default). It uses the same inference contract through a CPU
-Hugging Face Space. The service passes that
-finite pool to Pharmpy, resamples design-matched cohort replicates, and returns
-Pharmpy's equal-number-binned VPC statistics. Resampling does not invoke the
-neural model or increase the number of generated individuals. Caching the
+of generated individuals (20 by default; at most 100 for Pythia and 30 for
+Pythia-Dose) and the reproducible random seed (43 by default). It uses the same
+inference contract through a CPU Hugging Face Space. The service resamples that
+finite pool into design-matched cohort replicates. Synchronized schedules use
+exact-time VPC statistics; irregular schedules use Pharmpy's equal-number time
+bins. Resampling does not invoke the neural model or increase the number of
+generated individuals. Caching the
 context encoding and GP factor across separate protocol requests remains a
 performance improvement.
 

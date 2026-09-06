@@ -124,11 +124,41 @@ class PharmpyVpcTests(unittest.TestCase):
         )
 
         self.assertEqual(summary["method"], "pharmpy")
+        self.assertEqual(summary["timeBinning"], "exact_schedule")
         self.assertEqual(summary["generatedIndividuals"], 20)
         self.assertEqual(summary["simulatedCohortReplicates"], 40)
-        self.assertEqual(summary["effectiveBins"], 3)
-        self.assertEqual(len(summary["points"]), 3)
+        self.assertEqual(summary["effectiveBins"], 4)
+        self.assertEqual(len(summary["points"]), 4)
+        self.assertEqual(
+            [point["time"] for point in summary["points"]],
+            times.tolist(),
+        )
         self.assertTrue(all(point["nObservations"] > 0 for point in summary["points"]))
+
+    def test_irregular_schedules_still_use_pharmpy_equal_number_bins(self) -> None:
+        times = np.array([0.5, 1.0, 1.5, 2.0, 4.0])
+        baseline = np.array([10.0, 8.0, 7.0, 5.0, 2.0])
+        pool = np.stack([baseline * scale for scale in np.linspace(0.7, 1.3, 20)])
+        cohort = {
+            "horizon": 4.0,
+            "subjects": {
+                "a": [(0.5, 9.0), (1.0, 7.2), (2.0, 4.5), (4.0, 1.8)],
+                "b": [(0.5, 10.0), (1.5, 7.0), (4.0, 2.0)],
+                "c": [(0.5, 11.0), (2.0, 5.5), (4.0, 2.2)],
+            },
+        }
+
+        summary = pharmpy_vpc_summary(
+            pool,
+            times,
+            cohort,
+            replicates=40,
+            requested_bins=3,
+            seed=7,
+        )
+
+        self.assertEqual(summary["timeBinning"], "equal_number")
+        self.assertEqual(summary["effectiveBins"], 3)
 
 if __name__ == "__main__":
     unittest.main()

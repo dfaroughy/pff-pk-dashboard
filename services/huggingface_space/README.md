@@ -28,9 +28,10 @@ Public requests generate 20 individuals by default. Generation-only Pythia
 requests are capped at 100 individuals; Pythia-Dose requests retain the
 30-individual cap. The demo fixes flow integration to eight Heun steps; solver
 controls are not exposed. These limits are enforced by both the dashboard and
-the inference service. Pharmpy computes each displayed VPC from that same
-generated pool using design-matched resampled cohorts and equal-number time
-bins.
+the inference service. Each VPC uses that same generated pool and
+design-matched resampled cohorts. Cohorts with a synchronized schedule are
+evaluated at every exact observation time; irregular schedules use Pharmpy's
+equal-number time bins.
 
 The named Gradio endpoints are `/health` and `/inference`. Inference is
 serialized to keep memory use bounded; identical requests reuse a response

@@ -469,7 +469,7 @@ def cached_inference(request: dict[str, Any]) -> dict[str, Any]:
     runtime = runtime_for_request(request)
     runtime.load()
     cache_key = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "request": request,
         "checkpointSha256": runtime.checkpoint_sha256,
         "configSha256": hashlib.sha256(runtime.config_path.read_bytes()).hexdigest(),
