@@ -166,13 +166,21 @@ test("uses model-specific generation limits", async () => {
 });
 
 test("renders the server-side Pharmpy VPC summary", () => {
-  render(<ModelVpcChart result={response} logY={false} showEmpirical={false} />);
+  render(<ModelVpcChart result={response} study={study} logY={false} showEmpirical={false} />);
   const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check computed with Pharmpy" });
-  expect(chart.querySelectorAll("g[clip-path] > path")).toHaveLength(3);
+  expect(chart.querySelectorAll("g[clip-path] > rect")).toHaveLength(3);
   expect(chart.querySelectorAll("g[clip-path] > g")).toHaveLength(0);
   expect(chart.querySelectorAll("circle")).toHaveLength(0);
   const xTicks = [...chart.querySelectorAll("text.tick")].slice(0, 5).map((tick) => tick.textContent);
   expect(xTicks.at(-1)).toBe("24.0");
+});
+
+test("keeps the observed VPC on its original observation-time mesh after inference", () => {
+  render(<ModelVpcChart result={response} study={study} logY={false} showEmpirical />);
+  const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check computed with Pharmpy" });
+  const empiricalMarkers = [...chart.querySelectorAll("g[clip-path] circle")];
+  expect(empiricalMarkers).toHaveLength(6);
+  expect(empiricalMarkers.at(-1)?.getAttribute("cx")).toBe("698");
 });
 
 test("Pythia is generation-only and sends the baseline protocol", async () => {

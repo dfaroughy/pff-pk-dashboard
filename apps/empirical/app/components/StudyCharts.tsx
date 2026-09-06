@@ -35,13 +35,22 @@ function ticks(min: number, max: number, count = 5) {
 }
 
 type LineStyle = { stroke: string; width?: number; opacity?: number; markers?: boolean; radius?: number; dash?: string };
+type IntervalBand = {
+  fill: string;
+  intervals: Array<{ timeLower: number; timeUpper: number; lower: number; upper: number }>;
+};
 
-function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [] }: {
+function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [], intervalBands = [] }: {
   series: Point[][]; styles: LineStyle[]; logY: boolean; xLabel: string; yLabel: string; ariaLabel: string;
   bands?: { lower: Point[]; upper: Point[]; fill: string }[];
+  intervalBands?: IntervalBand[];
 }) {
   const clipId = useId().replaceAll(":", "");
-  const domain = bounds([...series, ...bands.flatMap((band) => [band.lower, band.upper])], logY);
+  const intervalCorners = intervalBands.flatMap((band) => band.intervals.flatMap((interval) => [
+    [[interval.timeLower, interval.lower], [interval.timeUpper, interval.lower]] as Point[],
+    [[interval.timeLower, interval.upper], [interval.timeUpper, interval.upper]] as Point[],
+  ]));
+  const domain = bounds([...series, ...bands.flatMap((band) => [band.lower, band.upper]), ...intervalCorners], logY);
   const x = (value: number) => MARGIN.left + (value - domain.xMin) / (domain.xMax - domain.xMin) * (WIDTH - MARGIN.left - MARGIN.right);
   const y = (value: number) => {
     const transformed = logY ? Math.log10(Math.max(value, 1e-30)) : value;
@@ -64,6 +73,14 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [] }: 
     })}
     <g clipPath={`url(#${clipId})`}>
       {bands.map((band, index) => <path key={`band-${index}`} d={bandPath(band.lower, band.upper)} fill={band.fill} />)}
+      {intervalBands.map((band, bandIndex) => band.intervals.map((interval, intervalIndex) => <rect
+        key={`interval-${bandIndex}-${intervalIndex}`}
+        x={x(interval.timeLower)}
+        y={y(interval.upper)}
+        width={Math.max(0, x(interval.timeUpper) - x(interval.timeLower))}
+        height={Math.max(0, y(interval.lower) - y(interval.upper))}
+        fill={band.fill}
+      />))}
       {series.map((points, index) => {
         const style = styles[index] ?? styles[0];
         return <g key={`line-${index}`} opacity={style.opacity ?? 1}>
@@ -121,33 +138,30 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { r
   />;
 }
 
-export function ModelVpcChart({ result, logY, showEmpirical }: { result: InferenceResponse; logY: boolean; showEmpirical: boolean }) {
+export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: InferenceResponse; study: Study; logY: boolean; showEmpirical: boolean }) {
   const model = result.vpc.points;
-  const queryStart = result.queryTime[0];
-  const queryEnd = result.queryTime.at(-1);
-  const spanQueryDomain = (points: Point[]) => {
-    if (!points.length || queryStart === undefined || queryEnd === undefined) return points;
-    return [
-      ...(queryStart < points[0][0] ? [[queryStart, points[0][1]] as Point] : []),
-      ...points,
-      ...(queryEnd > points.at(-1)![0] ? [[queryEnd, points.at(-1)![1]] as Point] : []),
-    ];
-  };
-  const point = (key: "q05" | "q50" | "q95", bound: "lower" | "center" | "upper") => spanQueryDomain(
-    model.map((entry) => [entry.time, entry.simulated[key][bound]] as Point),
-  );
+  const observed = (study.observedVpc ?? observedVpc(study)).filter((entry) => entry.n >= 2);
   const empiricalSeries = showEmpirical ? [
-    spanQueryDomain(model.map((entry) => [entry.time, entry.observed.q05] as Point)),
-    spanQueryDomain(model.map((entry) => [entry.time, entry.observed.q50] as Point)),
-    spanQueryDomain(model.map((entry) => [entry.time, entry.observed.q95] as Point)),
+    observed.map((entry) => [entry.time, entry.q05] as Point),
+    observed.map((entry) => [entry.time, entry.q50] as Point),
+    observed.map((entry) => [entry.time, entry.q95] as Point),
   ] : [];
+  const intervalBand = (key: "q05" | "q50" | "q95", fill: string): IntervalBand => ({
+    fill,
+    intervals: model.map((entry) => ({
+      timeLower: entry.timeLower,
+      timeUpper: entry.timeUpper,
+      lower: entry.simulated[key].lower,
+      upper: entry.simulated[key].upper,
+    })),
+  });
   return <Chart
     series={empiricalSeries}
     styles={empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--magenta)" : "var(--cyan)", width: 1, markers: true, radius: 2.1 }))}
-    bands={[
-      { lower: point("q05", "lower"), upper: point("q05", "upper"), fill: "var(--generated-band-fill)" },
-      { lower: point("q50", "lower"), upper: point("q50", "upper"), fill: "var(--generated-median-band-fill)" },
-      { lower: point("q95", "lower"), upper: point("q95", "upper"), fill: "var(--generated-band-fill)" },
+    intervalBands={[
+      intervalBand("q05", "var(--generated-band-fill)"),
+      intervalBand("q50", "var(--generated-median-band-fill)"),
+      intervalBand("q95", "var(--generated-band-fill)"),
     ]}
     logY={logY}
     xLabel={`Time (${result.units.time})`}

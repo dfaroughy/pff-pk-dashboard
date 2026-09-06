@@ -550,7 +550,7 @@ export function Dashboard() {
             </article>
             <article className="card chart-card">
               <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
-              {modelResult ? <ModelVpcChart result={modelResult} logY={vpcLogY} showEmpirical /> : <VpcChart study={activeStudy} logY={vpcLogY} />}
+              {modelResult ? <ModelVpcChart result={modelResult} study={activeStudy} logY={vpcLogY} showEmpirical /> : <VpcChart study={activeStudy} logY={vpcLogY} />}
               <VpcCaption study={activeStudy} result={modelResult} />
             </article>
             <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
