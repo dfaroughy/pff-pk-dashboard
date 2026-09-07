@@ -517,20 +517,22 @@ export function Dashboard() {
     </header>
     <div className="workspace">
       <main className="content">
-        {!syntheticMode && <CohortSelector studies={studies} selected={selected} onSelect={(study) => {
+        {!syntheticMode && <section className="empirical-cohort-bar">
+          <CohortSelector studies={studies} selected={selected} onSelect={(study) => {
             setSyntheticMode(false);
             setSyntheticStale(false);
             setSelectedId(study.id);
             setModelResult(null);
-          }} />}
-        <section className="study-meta">
-          <dl>
-            <div><dt>Route</dt><dd>{activeStudy?.route ?? "Sampled with model"}</dd></div>
-            <div><dt>Dose</dt><dd>{activeStudy ? (activeStudy.dose === null ? "Not reported" : `${format(activeStudy.dose)} ${activeStudy.doseUnit}`) : "Dimensionless"}</dd></div>
-            <div><dt>Individuals</dt><dd>{activeStudy?.subjects.length || (syntheticMode ? "Not generated" : "Aggregate")}</dd></div>
-            <div><dt>Matrix</dt><dd>{activeStudy?.medium || (syntheticMode ? "Central compartment" : "Not reported")}</dd></div>
-          </dl>
-        </section>
+          }} />
+          <section className="study-meta" aria-label="Cohort summary">
+            <dl>
+              <div><dt>Route</dt><dd>{selected.route}</dd></div>
+              <div><dt>Dose</dt><dd>{selected.dose === null ? "Not reported" : `${format(selected.dose)} ${selected.doseUnit}`}</dd></div>
+              <div><dt>Individuals</dt><dd>{selected.subjects.length || "Aggregate"}</dd></div>
+              <div><dt>Matrix</dt><dd>{selected.medium || "Not reported"}</dd></div>
+            </dl>
+          </section>
+        </section>}
         {activeStudy ? <>
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">

@@ -179,6 +179,7 @@ test("keeps the previous synthetic plots visible but faded until regeneration", 
 
   render(<Dashboard />);
   expect(await screen.findByLabelText("Empirical cohort")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Cohort summary" })).toBeTruthy();
   expect(screen.getByText("Empirical Cohorts")).toBeTruthy();
   expect(document.querySelector(".study-browser")).toBeNull();
   expect(screen.queryByRole("button", { name: "Synthetic cohort" })).toBeNull();
@@ -187,6 +188,7 @@ test("keeps the previous synthetic plots visible but faded until regeneration", 
   render(<Dashboard />);
   expect(await screen.findByText("Synthetic Cohorts")).toBeTruthy();
   expect(screen.queryByLabelText("Empirical cohort")).toBeNull();
+  expect(screen.queryByRole("region", { name: "Cohort summary" })).toBeNull();
   const chart = await screen.findByRole("img", { name: "Observed visual predictive check for Synthetic cohort" });
   const results = chart.closest(".results-grid") as HTMLElement;
   expect(results.dataset.stale).toBeUndefined();
