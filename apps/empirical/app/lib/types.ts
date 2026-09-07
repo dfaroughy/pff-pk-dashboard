@@ -1,6 +1,6 @@
 export type Point = [number, number];
 
-export type Subject = { id: string; points: Point[] };
+export type Subject = { id: string; points: Point[]; latentPoints?: Point[]; cens?: (0 | 1 | null)[] };
 export type SummaryPoint = { time: number; mean: number; sd: number | null; n: number | null };
 export type DoseEvent = { time: number; amount: number; unit: string; route: string; duration?: number };
 
@@ -22,6 +22,8 @@ export type Study = {
   subjects: Subject[];
   summary: SummaryPoint[];
   observedVpc?: VpcPoint[];
+  assay?: { lloq: number; source: string; synthetic?: boolean };
+  censoringApplied?: boolean;
 };
 
 export type Corpus = { schemaVersion: number; generatedAt: string; studies: Study[] };

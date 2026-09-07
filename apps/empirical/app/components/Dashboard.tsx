@@ -1,4 +1,5 @@
 "use client";
+import { applySyntheticCensoring, drawCensoring, withAssayMetadata } from "../lib/censoring";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { runInference, serviceStatus, type InferenceResponse, type ModelId, type ServiceStatus } from "../lib/model-api";
@@ -402,6 +403,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
       {!events.length && <p className="empty-protocol">Add at least one dose event.</p>}
     </div>
     <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div></>}
+    {(study.censoringApplied || study.assay) && <p className="model-warning">Exploratory inference: these models treat reported concentrations as exact values and do not account for censoring. Dose changes may incorrectly scale the assay floor.</p>}
     {!eligible && <p className="model-warning">Interactive Pythia-PK inference requires at least two individual trajectories.</p>}
     {!selectedStatus?.ready && <p className="model-warning">{hosted ? "The hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
     {modelId === "pythia_dose" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
@@ -501,11 +503,22 @@ export function Dashboard() {
   const [trajectoryLogY, setTrajectoryLogY] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [modelResult, setModelResult] = useState<InferenceResponse | null>(null);
+  const [assayLimit, setAssayLimit] = useState<number | null>(null);
+  const [sensitivity, setSensitivity] = useState(67);
+  const [showLatent, setShowLatent] = useState(false);
   useEffect(() => { fetch(dashboardRuntimeConfig().corpusUrl).then((response) => response.json()).then(setCorpus); }, []);
   if (!corpus) return <main className="loading"><div className="loading-mark" />Loading PK catalogue…</main>;
   const studies = customStudy ? [customStudy, ...corpus.studies] : corpus.studies;
-  const selected = studies.find((study) => study.id === selectedId) ?? studies[0];
-  const activeStudy = syntheticMode ? syntheticStudy : selected;
+  const selected = withAssayMetadata(studies.find((study) => study.id === selectedId) ?? studies[0]);
+  const activeStudy = syntheticMode ? (syntheticStudy && assayLimit !== null ? applySyntheticCensoring(syntheticStudy, assayLimit) : syntheticStudy) : selected;
+  const setAssaySensitivity = (ratio: number) => {
+    if (!syntheticStudy || !Number.isFinite(ratio) || ratio < 1 || ratio > 10000) return;
+    const maximum = Math.max(...syntheticStudy.subjects.flatMap((s) => s.points.map(([, c]) => c)));
+    if (maximum <= 0) return;
+    setSensitivity(ratio);
+    if (assayLimit !== null) setAssayLimit(maximum / ratio);
+    setModelResult(null);
+  };
   const empiricalVpc = (activeStudy?.subjects.length ?? 0) > 0;
   const modelLabel = modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
   return <div className="dashboard-shell" data-theme={darkMode ? "dark" : "light"}>
@@ -540,7 +553,7 @@ export function Dashboard() {
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">
               <div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}<i className="blue-line" />Study</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
-              {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} />}
+              {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} showLatent={showLatent && syntheticMode} />}
               <IndividualsCaption study={activeStudy} result={modelResult} />
             </article>
             <article className="card chart-card">
@@ -555,11 +568,33 @@ export function Dashboard() {
         </> : <SyntheticResultsPlaceholder />}
         {syntheticMode ? <section className="overview-grid synthetic-overview">
           <SyntheticStudyBuilder
+            censoringControls={(onEdit) => <>
+              <div className="synthetic-protocol-heading"><div className="synthetic-schedule-controls">
+                <label>Censoring <select aria-label="Censoring enabled" value={assayLimit === null ? "false" : "true"} onChange={(e) => {
+                  onEdit();
+                  const maximum = Math.max(...(syntheticStudy?.subjects.flatMap((s) => s.points.map(([, c]) => c)) ?? [0]));
+                  setAssayLimit(e.target.value === "true" && maximum > 0 ? maximum / sensitivity : null);
+                  setModelResult(null);
+                }}><option value="false">False</option><option value="true">True</option></select></label>
+                <label>Cmax / LLOQ <input aria-label="Assay sensitivity" type="number" min="1" max="10000" value={sensitivity} onChange={(e) => { onEdit(); setAssaySensitivity(Number(e.target.value)); }} /></label>
+                <label>Latent curves <select aria-label="Show latent curves" value={String(showLatent)} onChange={(e) => setShowLatent(e.target.value === "true")}><option value="false">Hidden</option><option value="true">Visible</option></select></label>
+              </div></div>
+            </>}
             onInvalidate={() => { if (syntheticStudy) setSyntheticStale(true); }}
-            onGenerate={(study) => { setSyntheticStudy(study); setSyntheticStale(false); setModelResult(null); }}
+            onGenerate={(study, newDrawSeed) => {
+              if (newDrawSeed !== undefined) {
+                const draw = drawCensoring(newDrawSeed);
+                const maximum = Math.max(...study.subjects.flatMap((s) => s.points.map(([, c]) => c)));
+                setSensitivity(draw.ratio);
+                setAssayLimit(draw.enabled ? maximum / draw.ratio : null);
+              }
+              setSyntheticStudy(study); setSyntheticStale(false); setModelResult(null);
+            }}
           />
         </section> : <section className="overview-grid description-overview">
-          <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} /></article>
+          <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} />
+            {selected.assay && <p className="assay-caption">LLOQ {selected.assay.lloq.toPrecision(3)} {selected.concentrationUnit} · {selected.assay.source}. Hollow markers: unresolved censoring. VPC is descriptive. Pythia and Pythia-Dose predictions are not censoring-aware.</p>}
+          </article>
         </section>}
       </main>
     </div>

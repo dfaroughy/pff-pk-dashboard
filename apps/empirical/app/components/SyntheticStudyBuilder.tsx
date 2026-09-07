@@ -241,18 +241,20 @@ function DoseTimeline({ events, observationTimes }: { events: DoseEvent[]; obser
   </svg>;
 }
 
-export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
-  onGenerate: (study: Study) => void;
+export function SyntheticStudyBuilder({ onGenerate, onInvalidate, censoringControls }: {
+  onGenerate: (study: Study, newDrawSeed?: number) => void;
   onInvalidate: () => void;
+  censoringControls?: (onEdit: () => void) => ReactNode;
 }) {
   const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(SYNTHETIC_INITIAL_SEED));
   const [generationSeed, setGenerationSeed] = useState(SYNTHETIC_INITIAL_SEED);
   const [manualSeed, setManualSeed] = useState(false);
+  const [manualCensoring, setManualCensoring] = useState(false);
   const editedLatentModel = useRef(false);
   const [doseEvents, setDoseEvents] = useState<DoseEvent[]>(() => [initialDose(model.graph.route)]);
   const [acquisition, setAcquisition] = useState<SyntheticAcquisition>(SYNTHETIC_INITIAL_ACQUISITION);
   const [gridDraw, setGridDraw] = useState(0);
-  const [openSections, setOpenSections] = useState({ graph: true, kinetics: false, protocol: false });
+  const [openSections, setOpenSections] = useState({ graph: true, kinetics: false, protocol: false, censoring: false });
   const [individuals, setIndividuals] = useState<number>(SYNTHETIC_LIMITS.individuals.default);
   const [observations, setObservations] = useState<number>(SYNTHETIC_LIMITS.observations.default);
   const activeModel = useMemo(() => ({
@@ -281,6 +283,7 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
     return draw === generationSeed ? (draw + 1) % upper : draw;
   };
   const drawModel = () => {
+    setManualCensoring(false);
     const nextSeed = randomSeed();
     const nextModel = sampleSyntheticModel(nextSeed);
     const nextEvents = doseEvents.map((event) => ({ ...event, route: nextModel.graph.route }));
@@ -300,11 +303,11 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
         pattern: nextEvents.length > 1 ? "maintenance" : "single",
         rawProtocolHorizon: 1,
       },
-    }, individuals, observations, acquisition, 0));
+    }, individuals, observations, acquisition, 0), nextSeed);
   };
   const generate = () => {
     let nextModel = activeModel;
-    if (!editedLatentModel.current) {
+    if (!editedLatentModel.current && !manualCensoring) {
       const nextSeed = manualSeed ? generationSeed : randomSeed();
       const sampled = sampleSyntheticModel(nextSeed);
       const nextEvents = doseEvents.map((event) => ({ ...event, route: sampled.graph.route }));
@@ -325,9 +328,10 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
       setGridDraw(0);
     }
     setManualSeed(false);
-    const preserveCurrentGrid = editedLatentModel.current;
+    const preserveCurrentGrid = editedLatentModel.current || manualCensoring;
+    setManualCensoring(false);
     editedLatentModel.current = false;
-    onGenerate(generateSyntheticCohort(nextModel, individuals, observations, acquisition, preserveCurrentGrid ? gridDraw : 0));
+    onGenerate(generateSyntheticCohort(nextModel, individuals, observations, acquisition, preserveCurrentGrid ? gridDraw : 0), preserveCurrentGrid ? undefined : nextModel.seed);
   };
   const changeRate = (id: string, patch: Partial<RateDraw>) => {
     const rates = model.kinetics.rates.map((rate) => rate.id === id ? { ...rate, ...patch } : rate);
@@ -355,6 +359,7 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
     onInvalidate();
   };
   const changeDose = (index: number, field: "time" | "amount" | "duration", value: number) => {
+    editedLatentModel.current = true;
     setDoseEvents((current) => current.map((event, eventIndex) => {
       if (eventIndex !== index) return event;
       if (field === "amount") return { ...event, amount: Math.max(0.001, value) };
@@ -365,6 +370,7 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
     onInvalidate();
   };
   const addDose = () => {
+    editedLatentModel.current = true;
     setDoseEvents((current) => [...current, {
       time: 1 - 0.5 ** current.length,
       amount: 1,
@@ -374,11 +380,13 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
     onInvalidate();
   };
   const removeDose = (index: number) => {
+    editedLatentModel.current = true;
     if (index === 0) return;
     setDoseEvents((current) => current.filter((_, eventIndex) => eventIndex !== index));
     onInvalidate();
   };
   const resetDoses = () => {
+    editedLatentModel.current = true;
     setDoseEvents([initialDose(model.graph.route)]);
     onInvalidate();
   };
@@ -479,6 +487,9 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
         </div>)}</div>
         <div className="synthetic-dose-actions"><button className="secondary-button" type="button" onClick={addDose}>+ Add dose</button><button className="secondary-button quiet" type="button" onClick={resetDoses}>Reset protocol</button></div>
       </CollapsibleSection>
+      {censoringControls && <CollapsibleSection title="Data censoring" open={openSections.censoring} onToggle={() => toggleSection("censoring")}>
+        {censoringControls(() => setManualCensoring(true))}
+      </CollapsibleSection>}
     </div>
   </article>;
 }

@@ -36,12 +36,14 @@ function ticks(min: number, max: number, count = 5) {
 
 type LineStyle = { stroke: string; width?: number; opacity?: number; markers?: boolean; radius?: number; dash?: string };
 
-function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [] }: {
+function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [], assay, flagged = [] }: {
   series: Point[][]; styles: LineStyle[]; logY: boolean; xLabel: string; yLabel: string; ariaLabel: string;
   bands?: { lower: Point[]; upper: Point[]; fill: string }[];
+  assay?: Study["assay"];
+  flagged?: { point: Point; cens: 1 | null }[];
 }) {
   const clipId = useId().replaceAll(":", "");
-  const domain = bounds([...series, ...bands.flatMap((band) => [band.lower, band.upper])], logY);
+  const domain = bounds([...series, ...bands.flatMap((band) => [band.lower, band.upper]), ...(assay ? [[[0, assay.lloq] as Point]] : [])], logY);
   const x = (value: number) => MARGIN.left + (value - domain.xMin) / (domain.xMax - domain.xMin) * (WIDTH - MARGIN.left - MARGIN.right);
   const y = (value: number) => {
     const transformed = logY ? Math.log10(Math.max(value, 1e-30)) : value;
@@ -64,6 +66,7 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [] }: 
     })}
     <g clipPath={`url(#${clipId})`}>
       {bands.map((band, index) => <path key={`band-${index}`} d={bandPath(band.lower, band.upper)} fill={band.fill} />)}
+      {assay && <line x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(assay.lloq)} y2={y(assay.lloq)} stroke="var(--assay-amber)" strokeWidth="1.2" strokeDasharray="6 4" />}
       {series.map((points, index) => {
         const style = styles[index] ?? styles[0];
         return <g key={`line-${index}`} opacity={style.opacity ?? 1}>
@@ -72,6 +75,14 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [] }: 
         </g>;
       })}
     </g>
+    {assay && <g className="assay-overlay">
+      <text x={WIDTH - MARGIN.right - 4} y={Math.max(MARGIN.top + 12, y(assay.lloq) - 6)} textAnchor="end" fill="var(--assay-amber)" fontSize="12">LLOQ {assay.lloq.toPrecision(3)}</text>
+    </g>}
+    <g clipPath={`url(#${clipId})`}>{flagged.map(({ point: [t, c], cens }, i) => <g key={i}>
+      {cens === 1
+        ? <path aria-label="Censored observation" d={`M${x(t)-4},${y(c)-4} L${x(t)+4},${y(c)-4} L${x(t)},${y(c)+3} Z`} fill="var(--assay-amber)" />
+        : <circle aria-label="Unresolved censoring" cx={x(t)} cy={y(c)} r="4" fill="none" stroke="var(--assay-amber)" strokeWidth="1.5" />}
+    </g>)}</g>
     <line className="axis" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={HEIGHT - MARGIN.bottom} y2={HEIGHT - MARGIN.bottom} />
     <line className="axis" x1={MARGIN.left} x2={MARGIN.left} y1={MARGIN.top} y2={HEIGHT - MARGIN.bottom} />
     <text className="axis-label" x={(MARGIN.left + WIDTH - MARGIN.right) / 2} y={HEIGHT - 4} textAnchor="middle">{xLabel}</text>
@@ -79,12 +90,18 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [] }: 
   </svg>;
 }
 
-export function TrajectoryChart({ study, logY }: { study: Study; logY: boolean }) {
+function censoringMarkers(study: Study) {
+  return study.subjects.flatMap((s) => s.points.flatMap((point, i) => s.cens?.[i] === 1 || s.cens?.[i] === null ? [{ point, cens: s.cens[i] as 1 | null }] : []));
+}
+
+export function TrajectoryChart({ study, logY, showLatent = false }: { study: Study; logY: boolean; showLatent?: boolean }) {
   const series = useMemo(() => {
     if (study.subjects.length) return study.subjects.map((subject) => subject.points);
     return [study.summary.map((point) => [point.time, point.mean] as Point)];
   }, [study]);
-  return <Chart series={series} styles={series.map(() => ({ stroke: "var(--trajectory-blue)", width: 1, opacity: study.subjects.length ? 0.72 : 1, markers: true, radius: 1.9 }))} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Concentration trajectories for ${study.drug}`} />;
+  const latent = showLatent ? study.subjects.flatMap((s) => s.latentPoints ? [s.latentPoints] : []) : [];
+  const flagged = censoringMarkers(study);
+  return <Chart assay={study.assay} flagged={flagged} series={[...latent, ...series]} styles={[...latent.map(() => ({ stroke: "var(--trajectory-blue)", opacity: 0.35, dash: "4 3" })), ...series.map(() => ({ stroke: "var(--trajectory-blue)", width: 1, opacity: study.subjects.length ? 0.72 : 1, markers: true, radius: 1.9 }))]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Concentration trajectories for ${study.drug}`} />;
 }
 
 export function VpcChart({ study, logY }: { study: Study; logY: boolean }) {
@@ -98,7 +115,7 @@ export function VpcChart({ study, logY }: { study: Study; logY: boolean }) {
   const q05 = vpc.map((point) => [point.time, point.q05] as Point);
   const q50 = vpc.map((point) => [point.time, point.q50] as Point);
   const q95 = vpc.map((point) => [point.time, point.q95] as Point);
-  return <Chart series={[q50, q05, q95]} styles={[
+  return <Chart assay={study.assay} series={[q50, q05, q95]} styles={[
     { stroke: "var(--magenta)", width: 1, markers: true, radius: 2.2 },
     { stroke: "var(--cyan)", width: 1, markers: true, radius: 2.2 },
     { stroke: "var(--cyan)", width: 1, markers: true, radius: 2.2 },
@@ -109,6 +126,8 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { r
   const empirical = showEmpirical ? study.subjects.map((subject) => subject.points) : [];
   const generated = result.generatedConcentration.map((values) => result.queryTime.map((time, index) => [time, values[index]] as Point));
   return <Chart
+    assay={study.assay}
+    flagged={showEmpirical ? censoringMarkers(study) : []}
     series={[...empirical, ...generated]}
     styles={[
       ...empirical.map(() => ({ stroke: "var(--trajectory-blue)", width: 1, opacity: 0.38, markers: true, radius: 1.4 })),
@@ -134,6 +153,7 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
   const contour = (key: "q05" | "q50" | "q95", bound: "lower" | "upper") =>
     model.map((entry) => [entry.time, entry.simulated[key][bound]] as Point);
   return <Chart
+    assay={study.assay}
     series={empiricalSeries}
     styles={empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--magenta)" : "var(--cyan)", width: 1, markers: true, radius: 2.1 }))}
     bands={[
