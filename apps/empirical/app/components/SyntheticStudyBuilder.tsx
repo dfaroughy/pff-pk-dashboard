@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import katex from "katex";
 import type { Study } from "../lib/types";
 import {
@@ -248,7 +248,7 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
   const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(SYNTHETIC_INITIAL_SEED));
   const [generationSeed, setGenerationSeed] = useState(SYNTHETIC_INITIAL_SEED);
   const [manualSeed, setManualSeed] = useState(false);
-  const [editedLatentModel, setEditedLatentModel] = useState(false);
+  const editedLatentModel = useRef(false);
   const [doseEvents, setDoseEvents] = useState<DoseEvent[]>(() => [initialDose(model.graph.route)]);
   const [acquisition, setAcquisition] = useState<SyntheticAcquisition>(SYNTHETIC_INITIAL_ACQUISITION);
   const [gridDraw, setGridDraw] = useState(0);
@@ -283,17 +283,28 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
   const drawModel = () => {
     const nextSeed = randomSeed();
     const nextModel = sampleSyntheticModel(nextSeed);
+    const nextEvents = doseEvents.map((event) => ({ ...event, route: nextModel.graph.route }));
     setGenerationSeed(nextSeed);
     setManualSeed(false);
-    setEditedLatentModel(true);
+    editedLatentModel.current = true;
     setModel(nextModel);
-    setDoseEvents((current) => current.map((event) => ({ ...event, route: nextModel.graph.route })));
+    setDoseEvents(nextEvents);
     setGridDraw(0);
-    onInvalidate();
+    onGenerate(generateSyntheticCohort({
+      ...nextModel,
+      protocol: {
+        ...nextModel.protocol,
+        events: nextEvents,
+        multidose: nextEvents.length > 1,
+        infusion: nextEvents.some((event) => event.duration > 0),
+        pattern: nextEvents.length > 1 ? "maintenance" : "single",
+        rawProtocolHorizon: 1,
+      },
+    }, individuals, observations, acquisition, 0));
   };
   const generate = () => {
     let nextModel = activeModel;
-    if (!editedLatentModel) {
+    if (!editedLatentModel.current) {
       const nextSeed = manualSeed ? generationSeed : randomSeed();
       const sampled = sampleSyntheticModel(nextSeed);
       const nextEvents = doseEvents.map((event) => ({ ...event, route: sampled.graph.route }));
@@ -314,23 +325,29 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
       setGridDraw(0);
     }
     setManualSeed(false);
-    setEditedLatentModel(false);
-    onGenerate(generateSyntheticCohort(nextModel, individuals, observations, acquisition, editedLatentModel ? gridDraw : 0));
+    const preserveCurrentGrid = editedLatentModel.current;
+    editedLatentModel.current = false;
+    onGenerate(generateSyntheticCohort(nextModel, individuals, observations, acquisition, preserveCurrentGrid ? gridDraw : 0));
   };
   const changeRate = (id: string, patch: Partial<RateDraw>) => {
-    setModel((current) => {
-      const rates = current.kinetics.rates.map((rate) => rate.id === id ? { ...rate, ...patch } : rate);
-      return {
-        ...current,
-        kinetics: {
-          ...current.kinetics,
-          rates,
-          saturableCount: rates.filter((rate) => rate.beta !== null).length,
-        },
-      };
-    });
-    setEditedLatentModel(true);
-    onInvalidate();
+    const rates = model.kinetics.rates.map((rate) => rate.id === id ? { ...rate, ...patch } : rate);
+    const nextModel = {
+      ...model,
+      kinetics: {
+        ...model.kinetics,
+        rates,
+        saturableCount: rates.filter((rate) => rate.beta !== null).length,
+      },
+    };
+    const nextActiveModel = {
+      ...nextModel,
+      protocol: activeModel.protocol,
+    };
+    setModel(nextModel);
+    setManualSeed(false);
+    setGenerationSeed(nextModel.seed);
+    editedLatentModel.current = true;
+    onGenerate(generateSyntheticCohort(nextActiveModel, individuals, observations, acquisition, gridDraw));
   };
   const changeAcquisition = (patch: Partial<SyntheticAcquisition>) => {
     setAcquisition((current) => ({ ...current, ...patch }));
@@ -400,7 +417,7 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
           if (!Number.isFinite(value)) return;
           setGenerationSeed(Math.max(0, Math.min(2 ** 31 - 1, Math.round(value))));
           setManualSeed(true);
-          setEditedLatentModel(false);
+          editedLatentModel.current = false;
           onInvalidate();
         }} />
         <small>Random unless edited</small>

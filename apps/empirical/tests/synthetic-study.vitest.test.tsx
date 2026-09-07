@@ -101,10 +101,10 @@ test("draws a fresh cohort seed by default and honors a user-provided seed", asy
   expect(onGenerate.mock.calls[1][0].id).toContain("synthetic-v6-1729-");
 });
 
-test("edits kinetic laws and keeps the rendered equations synchronized", async () => {
+test("edits kinetic laws, updates equations, and regenerates at the fixed seed", async () => {
   const user = userEvent.setup();
-  const onInvalidate = vi.fn();
-  render(<SyntheticStudyBuilder onGenerate={vi.fn()} onInvalidate={onInvalidate} />);
+  const onGenerate = vi.fn();
+  render(<SyntheticStudyBuilder onGenerate={onGenerate} onInvalidate={vi.fn()} />);
 
   await user.click(screen.getByRole("button", { name: "Kinetic parameters" }));
   const law = screen.getAllByRole("combobox", { name: /J.+ law/ })[0] as HTMLSelectElement;
@@ -115,10 +115,13 @@ test("edits kinetic laws and keeps the rendered equations synchronized", async (
   await user.selectOptions(law, "saturable");
   expect(beta.disabled).toBe(false);
   expect(equations.textContent).toContain("β");
-  expect(onInvalidate).toHaveBeenCalled();
+  expect(onGenerate).toHaveBeenCalledOnce();
+  expect(onGenerate.mock.calls[0][0].id).toContain("synthetic-v6-46-");
 
   await user.selectOptions(law, "linear");
   expect(beta.disabled).toBe(true);
+  expect(onGenerate).toHaveBeenCalledTimes(2);
+  expect(onGenerate.mock.calls[1][0].id).toContain("synthetic-v6-46-");
 });
 
 test("uses the selected acquisition scheduler for preview and generation", async () => {

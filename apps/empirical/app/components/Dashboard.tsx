@@ -369,7 +369,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   };
   return <section className="model-panel model-action-rail">
     <div className="model-action-row">
-      <div className="model-action-identity"><h2>Pythia-PK</h2><span className={selectedStatus?.ready ? "status connected" : "status"}>{selectedStatus?.ready ? `CPU · ${selectedStatus.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span></div>
+      <div className="model-action-identity"><h2>Prior-fitted flows</h2><span className={selectedStatus?.ready ? "status connected" : "status"}>{selectedStatus?.ready ? `CPU · ${selectedStatus.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span></div>
       <div className="inference-actions">
         <button type="button" className="primary-button inference-progress" data-filled={progress >= 50 ? "true" : undefined} aria-label={running ? "Running model" : "Run model"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
           <span className="inference-progress-fill" role="progressbar" aria-label="Inference progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} style={{ width: `${progress}%` }} />
@@ -413,7 +413,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
 function InactiveModelPanel({ stale = false }: { stale?: boolean }) {
   return <section className="model-panel model-action-rail inactive-model-panel">
     <div className="model-action-row">
-      <div className="model-action-identity"><h2>Pythia-PK</h2><span className="status">{stale ? "Cohort changed" : "Awaiting cohort"}</span></div>
+      <div className="model-action-identity"><h2>Prior-fitted flows</h2><span className="status">{stale ? "Cohort changed" : "Awaiting cohort"}</span></div>
       <div className="inference-actions"><button type="button" className="primary-button inference-progress" disabled><span className="inference-progress-label">Run model</span></button></div>
       <label className="model-select">Model
         <select aria-label="Inactive model selection" value="pythia" disabled><option>Pythia</option></select>
