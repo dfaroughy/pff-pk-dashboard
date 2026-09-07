@@ -179,13 +179,14 @@ test("keeps the previous synthetic plots visible but faded until regeneration", 
 
   render(<Dashboard />);
   expect(await screen.findByLabelText("Empirical cohort")).toBeTruthy();
-  expect(screen.getByRole("heading", { name: "Empirical Cohort" })).toBeTruthy();
+  expect(screen.getByText("Empirical Cohorts")).toBeTruthy();
   expect(document.querySelector(".study-browser")).toBeNull();
-  const syntheticButton = (await screen.findAllByRole("button", { name: "Synthetic cohort" }))
-    .find((button) => button.classList.contains("synthetic-data-button"));
-  expect(syntheticButton).toBeTruthy();
-  await user.click(syntheticButton as HTMLButtonElement);
-  expect(screen.getByRole("heading", { name: "Synthetic Cohort" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Synthetic cohort" })).toBeNull();
+  window.history.replaceState({}, "", "?mode=synthetic");
+  cleanup();
+  render(<Dashboard />);
+  expect(await screen.findByText("Synthetic Cohorts")).toBeTruthy();
+  expect(screen.queryByLabelText("Empirical cohort")).toBeNull();
   const chart = await screen.findByRole("img", { name: "Observed visual predictive check for Synthetic cohort" });
   const results = chart.closest(".results-grid") as HTMLElement;
   expect(results.dataset.stale).toBeUndefined();

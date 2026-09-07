@@ -115,30 +115,24 @@ export function studyLabel(study: Study, studies: Study[]) {
   return `${study.drug} — ${dose}`;
 }
 
-function CohortSelector({ studies, selected, syntheticActive, onSelect, onUpload, onSynthetic }: {
+function CohortSelector({ studies, selected, onSelect }: {
   studies: Study[];
   selected: Study;
-  syntheticActive: boolean;
   onSelect: (study: Study) => void;
-  onUpload: () => void;
-  onSynthetic: () => void;
 }) {
   return <section className="cohort-selector" aria-label="Cohort selection">
     <label>Empirical cohort
       <select
         aria-label="Empirical cohort"
-        value={syntheticActive ? "" : selected.id}
+        value={selected.id}
         onChange={(event) => {
           const study = studies.find((candidate) => candidate.id === event.target.value);
           if (study) onSelect(study);
         }}
       >
-        {syntheticActive && <option value="" disabled>Select a cohort</option>}
         {studies.map((study) => <option value={study.id} key={study.id}>{studyLabel(study, studies)}</option>)}
       </select>
     </label>
-    <button className="custom-dataset-button" type="button" onClick={onUpload}>Upload dataset</button>
-    <button className={syntheticActive ? "synthetic-data-button active" : "synthetic-data-button"} type="button" aria-pressed={syntheticActive} onClick={onSynthetic}>Synthetic cohort</button>
   </section>;
 }
 
@@ -516,33 +510,20 @@ export function Dashboard() {
   const modelLabel = modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
   return <div className="dashboard-shell" data-theme={darkMode ? "dark" : "light"}>
     <header className="topbar">
-      <div><div className="brand-mark">Pythia PK</div><p className="brand-title">Prior-fitted flows for pharmacokinetics</p></div>
+      <div className="workspace-title">{syntheticMode ? "Synthetic Cohorts" : "Empirical Cohorts"}</div>
       <div className="topbar-meta">
         <button className="theme-switch" type="button" aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`} aria-pressed={darkMode} onClick={() => setDarkMode(!darkMode)}><i>{darkMode ? "☾" : "☀"}</i><b>{darkMode ? "Dark" : "Light"}</b></button>
       </div>
     </header>
     <div className="workspace">
       <main className="content">
-        <CohortSelector
-          studies={studies}
-          selected={selected}
-          syntheticActive={syntheticMode}
-          onUpload={() => setUploadOpen(true)}
-          onSynthetic={() => {
-            setSyntheticMode(true);
-            setSyntheticStudy(generateInitialSyntheticCohort());
-            setSyntheticStale(false);
-            setModelResult(null);
-          }}
-          onSelect={(study) => {
+        {!syntheticMode && <CohortSelector studies={studies} selected={selected} onSelect={(study) => {
             setSyntheticMode(false);
             setSyntheticStale(false);
             setSelectedId(study.id);
             setModelResult(null);
-          }}
-        />
-        <section className="study-title">
-          <h1>{syntheticMode ? "Synthetic Cohort" : "Empirical Cohort"}</h1>
+          }} />}
+        <section className="study-meta">
           <dl>
             <div><dt>Route</dt><dd>{activeStudy?.route ?? "Sampled with model"}</dd></div>
             <div><dt>Dose</dt><dd>{activeStudy ? (activeStudy.dose === null ? "Not reported" : `${format(activeStudy.dose)} ${activeStudy.doseUnit}`) : "Dimensionless"}</dd></div>

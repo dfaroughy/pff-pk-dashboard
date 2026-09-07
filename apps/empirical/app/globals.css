@@ -82,22 +82,7 @@ button { cursor: pointer; }
   background: var(--wash);
   color: var(--ink);
 }
-.topbar > div:first-child { display: flex; align-items: center; gap: 15px; }
-.brand-mark {
-  height: 42px;
-  min-width: 82px;
-  padding: 0 10px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--acid);
-  background: var(--acid-fill);
-  color: #142015;
-  font-family: var(--font-data);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .11em;
-}
-.brand-title { margin: 0 0 3px; font-size: 15px; font-weight: 620; letter-spacing: -.018em; }
+.workspace-title { font-size: 17px; font-weight: 620; letter-spacing: -.025em; }
 .topbar-meta { display: flex; align-items: center; gap: 7px; }
 .theme-switch {
   height: 29px;
@@ -128,45 +113,25 @@ button { cursor: pointer; }
   font-weight: 550;
   letter-spacing: -.03em;
 }
-.custom-dataset-button { width: 100%; border: 1px solid var(--acid); padding: 8px 10px; background: var(--acid-fill); color: #142015; font-family: var(--font-data); font-size: 9px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
-.custom-dataset-button::before { content: "+ "; }
-.custom-dataset-button:hover { background: transparent; color: var(--acid); }
-.synthetic-data-button { width: 100%; border: 1px solid var(--line-bright); padding: 8px 10px; background: var(--panel-raised); color: var(--ink); font-family: var(--font-data); font-size: 9px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
-.synthetic-data-button:hover, .synthetic-data-button.active { border-color: var(--cyan); color: var(--cyan); }
-
 .content { width: 100%; height: 100%; max-width: 1900px; margin: auto; padding: 28px 30px 60px; overflow: auto; }
 .cohort-selector {
-  display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(150px, 220px) minmax(150px, 220px);
-  align-items: end;
-  gap: 8px;
-  border: 1px solid var(--line);
-  padding: 10px;
-  background: var(--paper);
+  width: min(100%, 460px);
 }
 .cohort-selector label { color: var(--muted); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
 .cohort-selector select { display: block; width: 100%; margin-top: 4px; border: 1px solid var(--line-bright); border-radius: 0; padding: 8px 10px; background: var(--panel-raised); color: var(--ink); font-family: var(--font-data); font-size: 10px; text-transform: capitalize; }
 .cohort-selector select:focus { border-color: var(--cyan); outline: none; }
-.study-title {
+.study-meta {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 30px;
   border-bottom: 1px solid var(--line);
   padding: 11px 0 24px;
 }
-.study-title h1 {
-  margin: 0 0 8px;
-  font-size: clamp(38px, 4vw, 64px);
-  font-weight: 520;
-  letter-spacing: -.065em;
-  line-height: .92;
-  text-transform: capitalize;
-}
-.study-title dl { min-width: 475px; margin: 0; display: grid; grid-template-columns: repeat(4, minmax(85px, 1fr)); }
-.study-title dl div { min-height: 47px; border-left: 1px solid var(--line); padding: 4px 11px; }
-.study-title dt { margin-bottom: 6px; color: var(--muted); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
-.study-title dd { margin: 0; font-size: 11px; font-weight: 600; text-transform: capitalize; }
+.study-meta dl { min-width: 475px; margin: 0; display: grid; grid-template-columns: repeat(4, minmax(85px, 1fr)); }
+.study-meta dl div { min-height: 47px; border-left: 1px solid var(--line); padding: 4px 11px; }
+.study-meta dt { margin-bottom: 6px; color: var(--muted); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
+.study-meta dd { margin: 0; font-size: 11px; font-weight: 600; text-transform: capitalize; }
 .overview-grid { display: grid; grid-template-columns: minmax(350px, .8fr) minmax(600px, 1.2fr); gap: 10px; margin-top: 10px; }
 .synthetic-overview { grid-template-columns: minmax(600px, 1.7fr) minmax(340px, .7fr); align-items: start; margin-top: 10px; }
 .description-card { min-width: 0; padding: 18px; }
@@ -391,7 +356,7 @@ button { cursor: pointer; }
 .model-warning { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 9%, transparent); color: var(--orange); }
 .model-error { border-color: var(--magenta); background: color-mix(in srgb, var(--magenta) 9%, transparent); color: var(--magenta); }
 .inactive-model-panel select:disabled, .inactive-model-panel input:disabled { opacity: .58; cursor: not-allowed; }
-.topbar-meta, .study-title dt, .dose-event label, .model-controls label, .model-select, .status { font-family: var(--font-data); }
+.topbar-meta, .study-meta dt, .dose-event label, .model-controls label, .model-select, .status { font-family: var(--font-data); }
 .loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: 12px; background: #e8ede9; color: #63746d; font-family: var(--font-data); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 .loading-mark { width: 18px; height: 18px; border: 1px solid #bec9c3; border-top-color: #566d00; border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -401,8 +366,6 @@ button { cursor: pointer; }
   .synthetic-model-grid { grid-template-columns: 1fr; }
   .results-grid { grid-template-columns: 1fr 1fr; }
   .results-grid .distribution-card { grid-column: 1 / -1; }
-  .study-title { display: block; }
-  .study-title dl { min-width: 0; margin-top: 18px; }
 }
 @media (max-width: 900px) {
   .results-grid { grid-template-columns: 1fr; }
@@ -412,10 +375,7 @@ button { cursor: pointer; }
   .topbar { min-height: 69px; padding: 0 13px; }
   .workspace { display: block; height: auto; }
   .content { padding: 18px 12px 40px; }
-  .cohort-selector { grid-template-columns: 1fr 1fr; }
-  .cohort-selector label { grid-column: 1 / -1; }
-  .study-title h1 { font-size: 42px; }
-  .study-title dl { grid-template-columns: 1fr 1fr; }
+  .study-meta dl { min-width: 0; width: 100%; grid-template-columns: 1fr 1fr; }
   .dose-event { grid-template-columns: 25px 1fr 1fr 24px; }
   .dose-event .unit { display: none; }
   .protocol-actions { flex-wrap: wrap; }
