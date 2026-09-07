@@ -26,8 +26,9 @@ test("portable entry points use subpath-safe asset references", async () => {
   }
 });
 
-test("landing page links to the two applications", async () => {
+test("landing page links to empirical, synthetic, and dataset-upload workflows", async () => {
   const html = await readFile("dist/index.html", "utf8");
   assert.match(html, /href="\.\/empirical\/"/);
   assert.match(html, /href="\.\/synthetic\/"/);
+  assert.match(html, /href="\.\/empirical\/\?mode=upload"/);
 });

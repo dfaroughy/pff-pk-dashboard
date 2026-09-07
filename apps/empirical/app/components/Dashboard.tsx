@@ -115,7 +115,7 @@ export function studyLabel(study: Study, studies: Study[]) {
   return `${study.drug} — ${dose}`;
 }
 
-function StudySelector({ studies, selected, syntheticActive, onSelect, onUpload, onSynthetic }: {
+function CohortSelector({ studies, selected, syntheticActive, onSelect, onUpload, onSynthetic }: {
   studies: Study[];
   selected: Study;
   syntheticActive: boolean;
@@ -123,15 +123,23 @@ function StudySelector({ studies, selected, syntheticActive, onSelect, onUpload,
   onUpload: () => void;
   onSynthetic: () => void;
 }) {
-  return <aside className="study-browser">
-    <div className="browser-header">
-      <button className="custom-dataset-button" type="button" onClick={onUpload}>Upload dataset</button>
-      <button className={syntheticActive ? "synthetic-data-button active" : "synthetic-data-button"} type="button" aria-pressed={syntheticActive} onClick={onSynthetic}>Synthetic cohort</button>
-    </div>
-    <div className="drug-list">
-      {studies.map((study) => <button className={!syntheticActive && study.id === selected.id ? "drug-name active" : "drug-name"} type="button" key={study.id} onClick={() => onSelect(study)}>{studyLabel(study, studies)}</button>)}
-    </div>
-  </aside>;
+  return <section className="cohort-selector" aria-label="Cohort selection">
+    <label>Empirical cohort
+      <select
+        aria-label="Empirical cohort"
+        value={syntheticActive ? "" : selected.id}
+        onChange={(event) => {
+          const study = studies.find((candidate) => candidate.id === event.target.value);
+          if (study) onSelect(study);
+        }}
+      >
+        {syntheticActive && <option value="" disabled>Select a cohort</option>}
+        {studies.map((study) => <option value={study.id} key={study.id}>{studyLabel(study, studies)}</option>)}
+      </select>
+    </label>
+    <button className="custom-dataset-button" type="button" onClick={onUpload}>Upload dataset</button>
+    <button className={syntheticActive ? "synthetic-data-button active" : "synthetic-data-button"} type="button" aria-pressed={syntheticActive} onClick={onSynthetic}>Synthetic cohort</button>
+  </section>;
 }
 
 export function DatasetUploadDialog({ onClose, onStudy }: {
@@ -489,9 +497,10 @@ function IndividualsCaption({ study, result }: {
 export function Dashboard() {
   const [corpus, setCorpus] = useState<Corpus | null>(null);
   const [customStudy, setCustomStudy] = useState<Study | null>(null);
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [syntheticMode, setSyntheticMode] = useState(false);
-  const [syntheticStudy, setSyntheticStudy] = useState<Study | null>(null);
+  const initialMode = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("mode");
+  const [uploadOpen, setUploadOpen] = useState(initialMode === "upload");
+  const [syntheticMode, setSyntheticMode] = useState(initialMode === "synthetic");
+  const [syntheticStudy, setSyntheticStudy] = useState<Study | null>(() => initialMode === "synthetic" ? generateInitialSyntheticCohort() : null);
   const [syntheticStale, setSyntheticStale] = useState(false);
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
   const [vpcLogY, setVpcLogY] = useState(false);
@@ -513,27 +522,27 @@ export function Dashboard() {
       </div>
     </header>
     <div className="workspace">
-      <StudySelector
-        studies={studies}
-        selected={selected}
-        syntheticActive={syntheticMode}
-        onUpload={() => setUploadOpen(true)}
-        onSynthetic={() => {
-          setSyntheticMode(true);
-          setSyntheticStudy(generateInitialSyntheticCohort());
-          setSyntheticStale(false);
-          setModelResult(null);
-        }}
-        onSelect={(study) => {
-          setSyntheticMode(false);
-          setSyntheticStale(false);
-          setSelectedId(study.id);
-          setModelResult(null);
-        }}
-      />
       <main className="content">
+        <CohortSelector
+          studies={studies}
+          selected={selected}
+          syntheticActive={syntheticMode}
+          onUpload={() => setUploadOpen(true)}
+          onSynthetic={() => {
+            setSyntheticMode(true);
+            setSyntheticStudy(generateInitialSyntheticCohort());
+            setSyntheticStale(false);
+            setModelResult(null);
+          }}
+          onSelect={(study) => {
+            setSyntheticMode(false);
+            setSyntheticStale(false);
+            setSelectedId(study.id);
+            setModelResult(null);
+          }}
+        />
         <section className="study-title">
-          <h1>{syntheticMode ? "Synthetic cohort" : selected.drug}</h1>
+          <h1>{syntheticMode ? "Synthetic Cohort" : "Empirical Cohort"}</h1>
           <dl>
             <div><dt>Route</dt><dd>{activeStudy?.route ?? "Sampled with model"}</dd></div>
             <div><dt>Dose</dt><dd>{activeStudy ? (activeStudy.dose === null ? "Not reported" : `${format(activeStudy.dose)} ${activeStudy.doseUnit}`) : "Dimensionless"}</dd></div>

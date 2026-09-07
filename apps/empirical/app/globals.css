@@ -121,15 +121,7 @@ button { cursor: pointer; }
 }
 .theme-switch b { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
 
-.workspace { display: grid; grid-template-columns: 250px minmax(0, 1fr); height: calc(100vh - 82px); }
-.study-browser {
-  background: var(--paper);
-  border-right: 1px solid var(--line);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.browser-header { display: grid; gap: 7px; padding: 10px; border-bottom: 1px solid var(--line); }
+.workspace { height: calc(100vh - 82px); }
 .section-heading h2, .card-heading h2, .model-panel h2 {
   margin: 0;
   font-size: 17px;
@@ -141,28 +133,20 @@ button { cursor: pointer; }
 .custom-dataset-button:hover { background: transparent; color: var(--acid); }
 .synthetic-data-button { width: 100%; border: 1px solid var(--line-bright); padding: 8px 10px; background: var(--panel-raised); color: var(--ink); font-family: var(--font-data); font-size: 9px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
 .synthetic-data-button:hover, .synthetic-data-button.active { border-color: var(--cyan); color: var(--cyan); }
-.drug-list { overflow: auto; padding: 5px 7px 48px; }
-.empty-catalogue { margin: 10px; border: 1px dashed var(--line-bright); padding: 13px; color: var(--muted); font-family: var(--font-data); font-size: 9px; text-align: center; }
-.drug-name {
-  display: block;
-  width: 100%;
-  padding: 7px 8px;
-  border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
-  border-left: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: var(--ink);
-  text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.2;
-  text-transform: capitalize;
-}
-.drug-name:hover { background: var(--panel-raised); border-left-color: var(--acid); }
-.drug-name.active { border-left-color: var(--cyan); background: var(--panel-raised); color: var(--cyan); }
 
-.content { width: 100%; max-width: 1900px; margin: auto; padding: 28px 30px 60px; overflow: auto; }
+.content { width: 100%; height: 100%; max-width: 1900px; margin: auto; padding: 28px 30px 60px; overflow: auto; }
+.cohort-selector {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(150px, 220px) minmax(150px, 220px);
+  align-items: end;
+  gap: 8px;
+  border: 1px solid var(--line);
+  padding: 10px;
+  background: var(--paper);
+}
+.cohort-selector label { color: var(--muted); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
+.cohort-selector select { display: block; width: 100%; margin-top: 4px; border: 1px solid var(--line-bright); border-radius: 0; padding: 8px 10px; background: var(--panel-raised); color: var(--ink); font-family: var(--font-data); font-size: 10px; text-transform: capitalize; }
+.cohort-selector select:focus { border-color: var(--cyan); outline: none; }
 .study-title {
   display: flex;
   align-items: flex-end;
@@ -427,8 +411,9 @@ button { cursor: pointer; }
 @media (max-width: 760px) {
   .topbar { min-height: 69px; padding: 0 13px; }
   .workspace { display: block; height: auto; }
-  .study-browser { height: 290px; border-right: 0; border-bottom: 1px solid var(--line); }
   .content { padding: 18px 12px 40px; }
+  .cohort-selector { grid-template-columns: 1fr 1fr; }
+  .cohort-selector label { grid-column: 1 / -1; }
   .study-title h1 { font-size: 42px; }
   .study-title dl { grid-template-columns: 1fr 1fr; }
   .dose-event { grid-template-columns: 25px 1fr 1fr 24px; }
