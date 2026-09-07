@@ -142,6 +142,9 @@ afterEach(() => {
 test("exposes only conservative public inference controls", async () => {
   render(<ModelPanel study={study} onResult={vi.fn()} />);
 
+  const run = screen.getByRole("button", { name: "Run zero-shot inference" });
+  const models = screen.getByLabelText("Models");
+  expect(run.compareDocumentPosition(models) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
   expect(draws.valueAsNumber).toBe(20);
   expect(draws.max).toBe("100");

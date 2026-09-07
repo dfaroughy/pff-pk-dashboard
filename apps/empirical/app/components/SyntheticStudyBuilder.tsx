@@ -350,6 +350,17 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
     <div className="section-heading synthetic-builder-heading">
       <h2>Synthetic cohort model</h2>
     </div>
+    <div className="synthetic-generate-controls">
+      <label>Individuals
+        <input type="number" min={SYNTHETIC_LIMITS.individuals.min} max={SYNTHETIC_LIMITS.individuals.max} step="1" value={individuals} onChange={(event) => changeIndividuals(Number(event.target.value))} />
+        <small>2–16</small>
+      </label>
+      <label>Observations per individual
+        <input type="number" min={SYNTHETIC_LIMITS.observations.min} max={SYNTHETIC_LIMITS.observations.max} step="1" value={observations} onChange={(event) => changeObservations(Number(event.target.value))} />
+        <small>2–20</small>
+      </label>
+      <button className="primary-button" type="button" onClick={generate}>Generate synthetic cohort</button>
+    </div>
     <div className="synthetic-accordion-stack">
       <CollapsibleSection title="Compartment graph" open={openSections.graph} onToggle={() => toggleSection("graph")}>
         <div className="synthetic-model-grid">
@@ -405,17 +416,6 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
         </div>)}</div>
         <div className="synthetic-dose-actions"><button className="secondary-button" type="button" onClick={addDose}>+ Add dose</button><button className="secondary-button quiet" type="button" onClick={resetDoses}>Reset protocol</button></div>
       </CollapsibleSection>
-    </div>
-    <div className="synthetic-generate-controls">
-      <label>Individuals
-        <input type="number" min={SYNTHETIC_LIMITS.individuals.min} max={SYNTHETIC_LIMITS.individuals.max} step="1" value={individuals} onChange={(event) => changeIndividuals(Number(event.target.value))} />
-        <small>2–16</small>
-      </label>
-      <label>Observations per individual
-        <input type="number" min={SYNTHETIC_LIMITS.observations.min} max={SYNTHETIC_LIMITS.observations.max} step="1" value={observations} onChange={(event) => changeObservations(Number(event.target.value))} />
-        <small>2–20</small>
-      </label>
-      <button className="primary-button" type="button" onClick={generate}>Generate synthetic cohort</button>
     </div>
   </article>;
 }

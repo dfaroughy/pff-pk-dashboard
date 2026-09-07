@@ -370,6 +370,12 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
       <h2>Pythia-PK</h2>
       <span className={selectedStatus?.ready ? "status connected" : "status"}>{selectedStatus?.ready ? `CPU · ${selectedStatus.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span>
     </div>
+    <div className="inference-actions">
+      <button type="button" className="primary-button inference-progress" data-filled={progress >= 50 ? "true" : undefined} aria-label={running ? "Running zero-shot inference" : "Run zero-shot inference"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
+        <span className="inference-progress-fill" role="progressbar" aria-label="Inference progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} style={{ width: `${progress}%` }} />
+        <span className="inference-progress-label">{running ? "Running zero-shot inference…" : "Run zero-shot inference"}</span>
+      </button>
+    </div>
     <label className="model-select">Models
       <select aria-label="Models" value={modelId} onChange={(event) => selectModel(event.target.value as ModelId)}>
         <option value="pythia">Pythia</option>
@@ -400,12 +406,6 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     {modelId === "pythia_dose" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
     {modelId === "pythia_dose" && eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
-    <div className="inference-actions">
-      <button type="button" className="primary-button inference-progress" data-filled={progress >= 50 ? "true" : undefined} aria-label={running ? "Running zero-shot inference" : "Run zero-shot inference"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
-        <span className="inference-progress-fill" role="progressbar" aria-label="Inference progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} style={{ width: `${progress}%` }} />
-        <span className="inference-progress-label">{running ? "Running zero-shot inference…" : "Run zero-shot inference"}</span>
-      </button>
-    </div>
   </section>;
 }
 
@@ -415,6 +415,7 @@ function InactiveModelPanel({ stale = false }: { stale?: boolean }) {
       <h2>Pythia-PK</h2>
       <span className="status">{stale ? "Cohort changed" : "Awaiting cohort"}</span>
     </div>
+    <div className="inference-actions"><button type="button" className="primary-button inference-progress" disabled><span className="inference-progress-label">Run zero-shot inference</span></button></div>
     <label className="model-select">Models
       <select aria-label="Inactive model selection" value="pythia" disabled><option>Pythia</option></select>
     </label>
@@ -423,7 +424,6 @@ function InactiveModelPanel({ stale = false }: { stale?: boolean }) {
       <label>Random seed <input type="number" value="43" disabled readOnly /></label>
     </div>
     <p className="model-warning">{stale ? "Generate the edited cohort to reactivate zero-shot inference." : "Generate the synthetic cohort to activate zero-shot inference."}</p>
-    <div className="inference-actions"><button type="button" className="primary-button inference-progress" disabled><span className="inference-progress-label">Run zero-shot inference</span></button></div>
   </section>;
 }
 

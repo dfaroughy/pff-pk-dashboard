@@ -61,7 +61,10 @@ test("clamps public synthetic cohort controls and emits a generated cohort", asy
 
   expect(screen.queryByText(/Interactive prior draw/)).toBeNull();
   expect(screen.getByRole("button", { name: "Draw new compartment model" }).closest(".synthetic-graph-panel")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Compartment graph" }).getAttribute("aria-expanded")).toBe("true");
+  const generate = screen.getByRole("button", { name: "Generate synthetic cohort" });
+  const compartment = screen.getByRole("button", { name: "Compartment graph" });
+  expect(generate.compareDocumentPosition(compartment) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  expect(compartment.getAttribute("aria-expanded")).toBe("true");
   await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
   expect((screen.getByLabelText("Dose 1 time") as HTMLInputElement).valueAsNumber).toBe(0);
   expect((screen.getByLabelText("Dose 1 time") as HTMLInputElement).disabled).toBe(true);
@@ -72,7 +75,7 @@ test("clamps public synthetic cohort controls and emits a generated cohort", asy
   await user.click(screen.getByRole("button", { name: "+ Add dose" }));
   expect(screen.getByRole("img", { name: "Dimensionless dose and observation schedule timeline" })).toBeTruthy();
 
-  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
+  await user.click(generate);
   expect(onGenerate).toHaveBeenCalledOnce();
   expect(onGenerate.mock.calls[0][0].subjects).toHaveLength(16);
   expect(onGenerate.mock.calls[0][0].subjects[0].points).toHaveLength(20);
