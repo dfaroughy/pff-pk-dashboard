@@ -22,7 +22,8 @@ npm run dev:full
 `dev:full` starts both the web dashboard and the local CPU inference service.
 The selector exposes two independent runtimes: `Pythia` is the
 `digital_square_8491` generation-only model, while `Pythia-Dose` is the
-`lucid_marten_2741` v6 dose-aware model. The latter remains the default. Override
+`lucid_marten_2741` v6 dose-aware model. The UI defaults to Pythia; the API retains
+its historical Pythia-Dose fallback when no model ID is supplied. Override
 their local paths without changing code:
 
 ```bash
@@ -105,21 +106,24 @@ studies.
   observed at each exact sampling time.
 - After model inference, the VPC is computed server-side. The same
   finite pool shown in the trajectory panel (20 individuals by default) is
-  resampled into 200 inexpensive cohorts matched to the observed cohort size.
+  resampled with replacement into 200 inexpensive cohorts matched to each
+  observed individual's sampling schedule.
   Generated quantiles and their 90% simulation intervals are evaluated on the
   model's exact query mesh: the union of empirical observation times. This
-  retains Pharmpy's nearest-rank quantile convention without introducing bin
-  midpoints or edges that are not model observation times.
+  uses a documented half-up order-statistic quantile convention without introducing
+  bin midpoints or edges that are not model observation times. It is a finite-pool
+  approximation, not a call to Pharmpy. See the repository VPC contract.
 - Summary-only records show the published mean and mean ± SD. They are clearly
   labelled and are not presented as an individual-level VPC.
-- Cmax, Tmax and AUClast are computed from the displayed median (individual
-  data) or mean (summary data) profile. The terminal slope and half-life are
+- Cmax, Tmax and AUClast in the box panels are computed per displayed individual.
+  The terminal slope and half-life are
   descriptive log-linear estimates; they are not parameters from an NLME fit.
 
 ## Verification
 
 ```bash
-npm run build
+npm run typecheck
+npm run lint
 npm test
 ```
 

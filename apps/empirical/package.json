@@ -8,12 +8,15 @@
   "scripts": {
     "dev": "vite --config vite.portable.config.ts",
     "dev:full": "bash scripts/run_dashboard.sh",
-    "dev:portable:full": "bash scripts/run_portable_dashboard.sh",
+    "dev:portable:full": "npm run dev:full",
     "build": "vite build --config vite.portable.config.ts",
     "build:portable": "vite build --config vite.portable.config.ts",
     "preview:portable": "vite preview --config vite.portable.config.ts",
     "inference": "bash scripts/run_inference_service.sh",
-    "test": "npm run build && node --test tests/*.test.mjs && vitest run tests/*.vitest.test.ts tests/*.vitest.test.tsx",
+    "test": "npm run build && npm run test:unit && npm run test:built",
+    "test:unit": "vitest run tests/*.vitest.test.ts tests/*.vitest.test.tsx",
+    "test:built": "node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit --incremental false",
     "lint": "eslint . --ignore-pattern portable-dist",
     "data:build": "bash scripts/build_data.sh"
   },
@@ -21,6 +24,7 @@
     "@fontsource-variable/space-grotesk": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@gradio/client": "^2.5.1",
+    "@pff-pk/synthetic-prior": "file:../../packages/synthetic-prior",
     "katex": "^0.18.6",
     "papaparse": "^5.7.0",
     "react": "19.2.6",
@@ -46,7 +50,7 @@
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "typescript-eslint": "8.59.3",
-    "vite": "8.0.13",
+    "vite": "8.2.2",
     "vitest": "^5.0.0"
   },
   "type": "module"

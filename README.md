@@ -1,53 +1,43 @@
-# PFF-PK dashboards
+# Pythia-PK dashboard
 
-Public, provider-independent interfaces for prior-fitted pharmacokinetic flows.
-This repository is intentionally separate from the model and synthetic-prior
-packages: it consumes their stable scientific interfaces but does not duplicate
-their implementation.
+One provider-independent React application for empirical, uploaded and synthetic
+cohorts, with Python/PyTorch inference. Model weights never enter the frontend.
+Space Grotesk, IBM Plex Mono, and the existing light/dark visual design are retained.
 
-## Repository layout
+## Layout
 
-- `apps/empirical/`: empirical and Lenuzza cohort explorer with optional PFF
-  inference and dose interventions.
-- `apps/synthetic/`: interactive constructor for the v6 synthetic PK prior.
-- `services/inference/`: Python/PyTorch inference service shared by the public
-  dashboard and local development.
-- `packages/ui/`: shared visual contract for typography and design tokens.
-- `models/`: model-release manifests only; checkpoints remain on Hugging Face.
+- `apps/empirical/`: integrated cohort explorer and interactive synthetic builder.
+- `packages/synthetic-prior/`: dependency-free browser teaching simulator.
+- `services/inference/`: request validation, persistent samples and model adapter.
+- `services/huggingface_space/`: CPU Space adapter and reproducible bundle builder.
+- `models/`: release manifests, not checkpoints.
 
-The two applications retain their existing visual design: Space Grotesk for
-interface text and IBM Plex Mono for scientific metadata.
+The standalone synthetic app was retired. Its previous implementation remains
+in Git history; `/synthetic/` redirects to `/empirical/?mode=synthetic`.
 
-## Run locally
-
-From this directory:
+## Local development and checks
 
 ```bash
-npm run dev:synthetic
-npm run dev:empirical
-```
-
-The empirical command also starts the local Python/PyTorch inference service.
-
-## Build for any web host
-
-Install dependencies once in each application, then build both:
-
-```bash
-npm ci --prefix apps/synthetic
 npm ci --prefix apps/empirical
-npm run build:pages
+npm run dev:empirical
+npm run check
+npm run test:services
 ```
 
-The combined site is written to `dist/`, with the empirical and synthetic
-applications at `/empirical/` and `/synthetic/`. GitHub Actions publishes this
-directory to GitHub Pages. See each application README for local development
-and inference endpoint configuration.
+The dev command starts the frontend and sibling `pff_pk/.venv` CPU service.
+Override `PFF_REPO` and `PFF_PYTHON` for another installed environment.
+The frontend check covers TypeScript, lint, unit tests, one production build,
+built catalogue checks and Pages routing. Service tests require the model
+package and its dependencies; they do not require a checkpoint or a GPU.
 
-## Model serving
+## Publishing
 
-Model weights do not belong in this repository. A Hugging Face model repository
-stores the checkpoint and matching configuration. A ZeroGPU Gradio Space will
-load that immutable revision and expose inference to the empirical dashboard.
-The Space deployment is kept as a mirror of `services/inference/`; GitHub is the
-canonical source.
+`npm run build:pages` writes the static site to `dist/`. Users need only a browser.
+GitHub Pages deployment requires both frontend and Python service checks to pass.
+CPU inference is hosted separately on Hugging Face; publishing the frontend does
+not update that service. See [release instructions](docs/RELEASING.md).
+
+The service calls the model package for preprocessing and flow integration.
+Finite-pool VPC resampling also lives in that package, with an explicit versioned
+method distinct from formal Pharmpy evaluation. See
+[the statistical contract](docs/VPC_CONTRACT.md).

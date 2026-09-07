@@ -1,4 +1,5 @@
-import type { Study, VpcPoint } from "./types";
+import type { Study } from "./types";
+import { observedVpc } from "./pk";
 import {
   Rng,
   acquireMesh,
@@ -13,7 +14,7 @@ import {
   type AcquisitionFamily,
   type ProtocolDraw,
   type ScheduleShape,
-} from "../../../synthetic/app/lib/prior";
+} from "@pff-pk/synthetic-prior";
 
 export const SYNTHETIC_LIMITS = {
   observations: { min: 2, max: 20, default: 8 },
@@ -40,29 +41,6 @@ export type SyntheticAcquisition = {
 
 function boundedInteger(value: number, low: number, high: number) {
   return Math.max(low, Math.min(high, Math.round(value)));
-}
-
-function quantile(values: number[], probability: number) {
-  const sorted = [...values].sort((left, right) => left - right);
-  const position = (sorted.length - 1) * probability;
-  const lower = Math.floor(position);
-  const fraction = position - lower;
-  return sorted[lower] + fraction * ((sorted[lower + 1] ?? sorted[lower]) - sorted[lower]);
-}
-
-function meshVpc(times: number[][], values: number[][]): VpcPoint[] {
-  const count = Math.min(...times.map((row) => row.length), ...values.map((row) => row.length));
-  return Array.from({ length: count }, (_, index) => {
-    const observedTimes = times.map((row) => row[index]);
-    const concentrations = values.map((row) => row[index]);
-    return {
-      time: quantile(observedTimes, 0.5),
-      q05: quantile(concentrations, 0.05),
-      q50: quantile(concentrations, 0.5),
-      q95: quantile(concentrations, 0.95),
-      n: concentrations.length,
-    };
-  });
 }
 
 function acquisitionSeed(modelSeed: number, observations: number, acquisition: SyntheticAcquisition, gridDraw: number) {
@@ -129,6 +107,10 @@ export function generateSyntheticCohort(
   const meshRng = new Rng(acquisitionSeed(model.seed, observations, acquisition, gridDraw));
   const mesh = acquireMesh(complete, 0, acquisition.family, acquisition.shape, observations, meshRng);
   const doseUnit = "relative dose";
+  const subjects: Study["subjects"] = mesh.times.map((times, person) => ({
+    id: `individual-${person + 1}`,
+    points: times.map((time, index) => [time, mesh.values[person][index]]),
+  }));
 
   return {
     id: `synthetic-v6-${model.seed}-${individuals}-${observations}-${acquisition.family}-${acquisition.shape}-${gridDraw}`,
@@ -151,12 +133,9 @@ export function generateSyntheticCohort(
     timeUnit: "τ",
     medium: "central compartment",
     unitClass: "dimensionless",
-    subjects: mesh.times.map((times, person) => ({
-      id: `individual-${person + 1}`,
-      points: times.map((time, index) => [time, mesh.values[person][index]]),
-    })),
+    subjects,
     summary: [],
-    observedVpc: meshVpc(mesh.times, mesh.values),
+    observedVpc: observedVpc({ subjects }),
   };
 }
 

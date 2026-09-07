@@ -470,7 +470,9 @@ function VpcCaption({ study, result }: {
     Visual predictive check for {study.drug} with N={study.subjects.length} individuals. The magenta curve is the observed median; cyan curves are the observed 5th and 95th percentiles.
   </p>;
   return <p className="plot-caption">
-    Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. The observed median is magenta and its 5th and 95th percentiles are cyan. Shaded regions are 90% simulation intervals from resampled generated cohorts.
+    Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. The observed median is magenta and its 5th and 95th percentiles are cyan. {result.vpc.method === "mesh_bootstrap"
+      ? "Shaded regions approximate 90% intervals for cohort percentiles by resampling generated curves with replacement at the observed schedules; they are conditional on this finite pool."
+      : "Shaded regions use the archived VPC procedure; rerun with the updated service for design-matched bootstrap intervals."} Empirical percentiles coincide where only one individual was observed.
   </p>;
 }
 

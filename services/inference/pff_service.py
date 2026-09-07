@@ -37,10 +37,7 @@ from pff_pk.inference.empirical import (  # noqa: E402
 )
 from pff_pk.inference.model import load_inference_model  # noqa: E402
 
-try:  # module import in tests and the hosted Space
-    from services.inference.pharmpy_vpc import pharmpy_vpc_summary  # noqa: E402
-except ModuleNotFoundError:  # direct execution from services/inference
-    from pharmpy_vpc import pharmpy_vpc_summary  # type: ignore[no-redef]  # noqa: E402
+from pff_pk.metrics.mesh_vpc import MESH_VPC_VERSION, mesh_vpc_summary  # noqa: E402
 
 DEFAULT_CONFIG = PFF_ROOT / "configs" / "amarel_v6_protocol_counterfactual_phase2_sparse.yaml"
 DEFAULT_CHECKPOINT = (
@@ -68,7 +65,6 @@ MAX_CONTEXT_INDIVIDUALS = 128
 MAX_CONTEXT_OBSERVATIONS = 8_192
 MAX_CONTEXT_QUERY_TIMES = 1_024
 VPC_REPLICATES = 200
-VPC_REQUESTED_BINS = 10
 VPC_SEED_OFFSET = 104729
 PYTHIA_MODEL = "pythia"
 PYTHIA_DOSE_MODEL = "pythia_dose"
@@ -371,12 +367,11 @@ class ModelRuntime:
                 physical = inverse_concentration(normalized, repeated).float().cpu().numpy()
             chunks.append(physical[..., 0])
         samples = np.concatenate(chunks, axis=0)
-        vpc = pharmpy_vpc_summary(
+        vpc = mesh_vpc_summary(
             samples,
             query_time,
             cohort,
             replicates=VPC_REPLICATES,
-            requested_bins=VPC_REQUESTED_BINS,
             seed=seed + VPC_SEED_OFFSET,
         )
         elapsed = time.perf_counter() - started
@@ -470,6 +465,7 @@ def cached_inference(request: dict[str, Any]) -> dict[str, Any]:
     runtime.load()
     cache_key = {
         "schemaVersion": 4,
+        "vpcVersion": MESH_VPC_VERSION,
         "request": request,
         "checkpointSha256": runtime.checkpoint_sha256,
         "configSha256": hashlib.sha256(runtime.config_path.read_bytes()).hexdigest(),

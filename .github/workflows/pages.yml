@@ -1,21 +1,20 @@
-name: Deploy dashboards to GitHub Pages
+name: Check and deploy dashboard
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,24 +22,75 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            apps/empirical/package-lock.json
-            apps/synthetic/package-lock.json
+          cache-dependency-path: apps/empirical/package-lock.json
       - run: npm ci --prefix apps/empirical
-      - run: npm ci --prefix apps/synthetic
-      - run: npm run build:pages
+      - run: npm --prefix apps/empirical audit --audit-level=high
+      - run: npm run check
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: checked-site
+          path: dist
+          include-hidden-files: true
+
+  services:
+    # Never expose private model source to code submitted from a fork.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: dashboard
+      - uses: actions/checkout@v4
+        with:
+          repository: dfaroughy/pff_pk
+          ref: main
+          ssh-key: ${{ secrets.PFF_PK_READ_KEY }}
+          persist-credentials: false
+          path: pff_pk
+      - uses: actions/checkout@v4
+        with:
+          repository: dfaroughy/synthetic_priors
+          ref: main
+          ssh-key: ${{ secrets.SYNTHETIC_PRIORS_READ_KEY }}
+          persist-credentials: false
+          path: synthetic_priors
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --extra dev
+        working-directory: pff_pk
+      - run: npm run test:services
+        working-directory: dashboard
+      - name: Test the locked Linux CPU Space runtime
+        run: |
+          pff_pk/.venv/bin/python dashboard/services/huggingface_space/build_bundle.py --pff-repo pff_pk --synthetic-repo synthetic_priors --output /tmp/space-bundle
+          uv venv --python 3.12 /tmp/space-runtime
+          uv pip install --python /tmp/space-runtime/bin/python -r /tmp/space-bundle/requirements.txt
+          cd dashboard
+          PFF_PYTHON=/tmp/space-runtime/bin/python PFF_REPO=/tmp/space-bundle npm run test:services
+      - name: Record tested scientific source revisions
+        run: |
+          git -C pff_pk rev-parse HEAD
+          git -C synthetic_priors rev-parse HEAD
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [frontend, services]
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: checked-site
+          path: dist
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

@@ -94,7 +94,7 @@ export function VpcChart({ study, logY }: { study: Study; logY: boolean }) {
     const upper = study.summary.map((point) => [point.time, point.mean + (point.sd ?? 0)] as Point);
     return <Chart series={[mean]} styles={[{ stroke: "var(--magenta)", width: 1, markers: true, radius: 2.2 }]} bands={[{ lower, upper, fill: "var(--blue-summary-fill)" }]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Published concentration summary for ${study.drug}`} />;
   }
-  const vpc = (study.observedVpc ?? observedVpc(study)).filter((point) => point.n >= 2);
+  const vpc = observedVpc(study);
   const q05 = vpc.map((point) => [point.time, point.q05] as Point);
   const q50 = vpc.map((point) => [point.time, point.q50] as Point);
   const q95 = vpc.map((point) => [point.time, point.q95] as Point);
@@ -123,7 +123,9 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { r
 
 export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: InferenceResponse; study: Study; logY: boolean; showEmpirical: boolean }) {
   const model = result.vpc.points;
-  const observed = (study.observedVpc ?? observedVpc(study)).filter((entry) => entry.n >= 2);
+  const observed = result.vpc.method === "mesh_bootstrap"
+    ? model.map((entry) => ({ time: entry.time, n: entry.nObservations, ...entry.observed }))
+    : observedVpc(study);
   const empiricalSeries = showEmpirical ? [
     observed.map((entry) => [entry.time, entry.q05] as Point),
     observed.map((entry) => [entry.time, entry.q50] as Point),

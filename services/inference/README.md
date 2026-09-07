@@ -1,40 +1,29 @@
-# PFF inference service
+# CPU inference boundary
 
-This directory is the deployment boundary between the static dashboards and
-`pff_pk`. The service accepts physical observations and optional dose events, delegates
-normalization and flow integration to the pinned model package, and returns
-physical concentration samples with model and solver provenance.
+The static application sends physical concentration observations and dose events.
+This service validates requests and delegates preprocessing, source construction,
+flow integration and inverse transforms to `pff_pk`.
 
-Two separately configured runtimes share this API. `pythia` is the
-`digital_square_8491` generation model; it accepts only the empirical reference
-protocol and never receives dose events as model inputs. `pythia_dose` is the
-v6 dose-event model and supports dose counterfactuals and interventions. Both
-models generate on the union of empirical observation times. The model
-identifier is part of each content-addressed cache key and response.
+Two separate lazy runtimes serve `pythia` (generation at the reference regimen)
+and `pythia_dose` (generation and dose interventions). Checkpoint paths can be
+overridden through the documented `PFF_*_CHECKPOINT` and `PFF_*_CONFIG` variables.
+Local defaults retain the historical checkpoint locations for compatibility.
 
-Each response also contains a formal VPC summary. The service uses the same
-finite pool returned in `generatedConcentration`—20 curves by default—and
-constructs 200 cohort-size-matched replicates by resampling those curves.
-Generated quantiles and their 90% simulation intervals are evaluated on the
-exact model query mesh using Pharmpy's nearest-rank convention. No bin midpoint
-or edge is rendered as a model observation. The replicate count therefore does
-not represent additional neural-model draws.
+Responses persist the generated sample pool and statistical summary. Cache keys
+include the request, checkpoint/configuration hashes and VPC method version.
+Changing the VPC implementation does not overwrite historical cache files.
 
-For local development, run `npm run dev:empirical` from the repository root.
-The application wrapper starts this service with the sibling `pff_pk`
-environment. The future Hugging Face Space must import this implementation
-rather than maintain a second copy.
+The dashboard uses `pff_pk.metrics.mesh_vpc.mesh_vpc_summary`: whole curves are
+sampled **with replacement** from the finite generated pool and assigned to
+the observed individual schedules. It uses actual query times, not bin centres.
+This is an inexpensive finite-pool bootstrap approximation, not a call to
+Pharmpy or 200 additional independent model draws. See
+[the full contract](../../docs/VPC_CONTRACT.md).
 
-Public deployment requirements:
+Run `npm run test:services` or `npm run dev:empirical` from the repository root.
+The same implementation is copied into a provenance-recorded CPU Space bundle;
+there is no independently maintained deployed science implementation.
 
-- download both checkpoint/configuration pairs from one immutable Hugging Face
-  model revision;
-- expose health and inference operations through a Gradio adapter;
-- restrict inputs, draws and integration steps;
-- serialize accelerator access and cache content-addressed responses; and
-- return checkpoint, configuration and solver fingerprints with every result.
-
-The public request boundary accepts at most 128 context individuals, 8,192
-observations, and 1,024 distinct observation times. These limits cover the
-built-in catalogue while preventing uploaded or hand-crafted payloads from
-creating unbounded CPU inference work.
+Limits remain 128 context individuals, 8,192 observations and 1,024 distinct
+times. Pythia produces up to 100 individuals; Pythia-Dose up to 30. The public
+Space enforces eight Heun steps and serializes inference.

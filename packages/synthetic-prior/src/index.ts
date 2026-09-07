@@ -1,3 +1,4 @@
+/** Browser teaching simulator; production integration remains in synthetic_priors. */
 export type Route = "oral" | "iv";
 export type NodeRole = "central" | "peripheral" | "transit" | "gut" | "depot_transit" | "depot" | "bile";
 
@@ -438,34 +439,3 @@ export function acquireMesh(study: StudyDraw, armIndex: number, family: Acquisit
   const values = times.map((row, i) => row.map((time) => interpolate(study.tau, arm.curves[i], time)));
   return { times, values, nominalTimes };
 }
-
-export const PRIOR_FACTS = {
-  topology: [
-    ["route", "oral with probability 0.65; otherwise IV"],
-    ["peripheral pools", "categorical {0,1,2,3} with weights {0.35,0.45,0.17,0.03}"],
-    ["oral transit depth", "truncated geometric on 0…8; p = 0.55"],
-    ["parallel absorption", "probability 0.25 conditional on oral"],
-    ["recycling loop", "probability 0.15 conditional on oral"],
-  ],
-  kinetics: [
-    ["rate ratio κ", "log κ ~ Normal(0, 1.5²), then a common time gauge is removed"],
-    ["saturation β", "log β ~ Normal(1, 2.5²); at most three nonlinear fluxes"],
-    ["Hill exponent h", "Uniform(0.7, 2.5)"],
-    ["time variation", "probability 0.60; Matérn ν ∈ {½, 3⁄2, 5⁄2, 7⁄2}"],
-    ["modulated transfer", "probability 0.12; at most one cross-state modulation"],
-  ],
-  protocol: [
-    ["repeated dosing", "probability 0.30; 2…8 dose events"],
-    ["infusion", "probability 0.15; duration 0.05…0.50 of the single-dose horizon"],
-    ["loading dose", "probability 0.25 within a multidose schedule"],
-    ["titration", "probability 0.20 within a multidose schedule"],
-    ["v6 family", "reference + 2 global-dose scalings + 2 add-on interventions"],
-  ],
-  cohort: [
-    ["study size", "35 exchangeable individuals in every arm"],
-    ["residual BSV", "correlated log-normal rate multipliers; log-SD 0.15…0.40"],
-    ["central volume", "log-normal ratio; log-SD 0.10…0.40, clipped to 0.2…5"],
-    ["oral bioavailability", "active with probability 0.80; log-SD 0.10…0.40"],
-    ["covariate map", "study-specific sparse random MLP; observed and hidden anonymous covariates"],
-  ],
-};

@@ -11,7 +11,7 @@ import {
   type SyntheticAcquisition,
   type SyntheticModelDraw,
 } from "../lib/synthetic-study";
-import type { DoseEvent, GraphDraw, RateDraw } from "../../../synthetic/app/lib/prior";
+import type { DoseEvent, GraphDraw, RateDraw } from "@pff-pk/synthetic-prior";
 
 function initialDose(route: GraphDraw["route"]): DoseEvent {
   return { time: 0, amount: 1, duration: 0, route };
@@ -253,8 +253,8 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
   const [acquisition, setAcquisition] = useState<SyntheticAcquisition>(SYNTHETIC_INITIAL_ACQUISITION);
   const [gridDraw, setGridDraw] = useState(0);
   const [openSections, setOpenSections] = useState({ graph: true, kinetics: false, protocol: false });
-  const [individuals, setIndividuals] = useState(SYNTHETIC_LIMITS.individuals.default);
-  const [observations, setObservations] = useState(SYNTHETIC_LIMITS.observations.default);
+  const [individuals, setIndividuals] = useState<number>(SYNTHETIC_LIMITS.individuals.default);
+  const [observations, setObservations] = useState<number>(SYNTHETIC_LIMITS.observations.default);
   const activeModel = useMemo(() => ({
     ...model,
     protocol: {

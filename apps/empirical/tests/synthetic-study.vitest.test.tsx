@@ -139,7 +139,8 @@ test("uses the selected acquisition scheduler for preview and generation", async
   expect(study.subjects[0].points.map(([time]: [number, number]) => time)).not.toEqual(
     study.subjects[1].points.map(([time]: [number, number]) => time),
   );
-  expect(study.observedVpc).toHaveLength(8);
+  const actualTimes = [...new Set(study.subjects.flatMap((subject: { points: [number, number][] }) => subject.points.map(([time]) => time)))].sort((a, b) => Number(a) - Number(b));
+  expect(study.observedVpc.map((point: { time: number }) => point.time)).toEqual(actualTimes);
 });
 
 test("resamples the observation grid and uses the previewed mesh for generation", () => {

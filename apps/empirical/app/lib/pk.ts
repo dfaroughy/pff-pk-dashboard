@@ -9,13 +9,19 @@ export function quantile(values: number[], probability: number): number {
   return sorted[lower] + fraction * ((sorted[lower + 1] ?? sorted[lower]) - sorted[lower]);
 }
 
+/** Same half-up order-statistic convention as pff_pk.metrics.mesh_vpc. */
+export function vpcQuantile(values: number[], probability: number): number {
+  if (!values.length) return Number.NaN;
+  return [...values].sort((a, b) => a - b)[Math.floor(probability * (values.length - 1) + 0.5)];
+}
+
 export function observedVpc(study: { subjects: { points: Point[] }[] }): VpcPoint[] {
   const byTime = new Map<number, number[]>();
   study.subjects.forEach((subject) => subject.points.forEach(([time, value]) => {
     byTime.set(time, [...(byTime.get(time) ?? []), value]);
   }));
   return [...byTime.entries()].sort(([a], [b]) => a - b).map(([time, values]) => ({
-    time, q05: quantile(values, 0.05), q50: quantile(values, 0.5), q95: quantile(values, 0.95), n: values.length,
+    time, q05: vpcQuantile(values, 0.05), q50: vpcQuantile(values, 0.5), q95: vpcQuantile(values, 0.95), n: values.length,
   }));
 }
 

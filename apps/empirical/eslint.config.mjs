@@ -8,12 +8,10 @@ import tseslint from "typescript-eslint";
 
 const eslintConfig = defineConfig([
   globalIgnores([
-    ".next/**",
     "dist/**",
     "portable-dist/**",
     "out/**",
     "build/**",
-    "next-env.d.ts",
   ]),
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

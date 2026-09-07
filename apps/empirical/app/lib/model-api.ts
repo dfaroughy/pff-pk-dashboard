@@ -1,4 +1,4 @@
-import { Client } from "@gradio/client";
+import type { Client } from "@gradio/client";
 import type { DoseEvent, Study } from "./types";
 import { dashboardRuntimeConfig } from "./runtime-config";
 
@@ -22,11 +22,12 @@ export type InferenceResponse = {
   queryTime: number[];
   generatedConcentration: number[][];
   vpc: {
-    method: "pharmpy";
+    method: "mesh_bootstrap" | "pharmpy"; // Accept archived responses during rollout.
+    methodVersion?: string;
     timeBinning?: "query_mesh";
     generatedIndividuals: number;
     simulatedCohortReplicates: number;
-    requestedBins: number;
+    requestedBins?: number;
     effectiveBins: number;
     points: Array<{
       time: number;
@@ -76,7 +77,7 @@ function isLocalApi(apiRoot: string) {
 function hostedClient(apiRoot: string) {
   let pending = hostedClients.get(apiRoot);
   if (!pending) {
-    pending = Client.connect(apiRoot).catch((error) => {
+    pending = import("@gradio/client").then(({ Client }) => Client.connect(apiRoot)).catch((error) => {
       hostedClients.delete(apiRoot);
       throw error;
     });

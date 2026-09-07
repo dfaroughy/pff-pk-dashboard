@@ -17,7 +17,7 @@ from services.inference.pff_service import (
     requested_model,
     target_dose_events,
 )
-from services.inference.pharmpy_vpc import pharmpy_vpc_summary
+from pff_pk.metrics.mesh_vpc import mesh_vpc_summary
 
 
 class RequestValidationTests(unittest.TestCase):
@@ -102,7 +102,7 @@ class RequestValidationTests(unittest.TestCase):
             )
 
 
-class PharmpyVpcTests(unittest.TestCase):
+class MeshVpcTests(unittest.TestCase):
     def test_summary_uses_only_the_supplied_generated_pool(self) -> None:
         times = np.array([0.5, 1.0, 2.0, 4.0])
         baseline = np.array([10.0, 8.0, 5.0, 2.0])
@@ -116,16 +116,15 @@ class PharmpyVpcTests(unittest.TestCase):
             },
         }
 
-        summary = pharmpy_vpc_summary(
+        summary = mesh_vpc_summary(
             pool,
             times,
             cohort,
             replicates=40,
-            requested_bins=3,
             seed=7,
         )
 
-        self.assertEqual(summary["method"], "pharmpy")
+        self.assertEqual(summary["method"], "mesh_bootstrap")
         self.assertEqual(summary["timeBinning"], "query_mesh")
         self.assertEqual(summary["generatedIndividuals"], 20)
         self.assertEqual(summary["simulatedCohortReplicates"], 40)
@@ -154,12 +153,11 @@ class PharmpyVpcTests(unittest.TestCase):
             },
         }
 
-        summary = pharmpy_vpc_summary(
+        summary = mesh_vpc_summary(
             pool,
             times,
             cohort,
             replicates=40,
-            requested_bins=3,
             seed=7,
         )
 

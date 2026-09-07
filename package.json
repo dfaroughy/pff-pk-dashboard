@@ -7,12 +7,12 @@
   },
   "scripts": {
     "dev:empirical": "npm --prefix apps/empirical run dev:portable:full",
-    "dev:synthetic": "npm --prefix apps/synthetic run dev:portable",
-    "build": "npm run build:empirical && npm run build:synthetic",
+    "dev:synthetic": "npm run dev:empirical",
+    "build": "npm run build:empirical",
     "build:empirical": "npm --prefix apps/empirical run build:portable",
-    "build:synthetic": "npm --prefix apps/synthetic run build:portable",
     "build:pages": "npm run build && node scripts/assemble-pages.mjs",
     "test:pages": "node --test tests/pages-bundle.test.mjs",
-    "check": "npm --prefix apps/empirical run lint && npm --prefix apps/empirical test && npm --prefix apps/synthetic run check && npm run build:pages && npm run test:pages"
+    "check": "npm --prefix apps/empirical run typecheck && npm --prefix apps/empirical run lint && npm --prefix apps/empirical run test:unit && npm run build:pages && npm --prefix apps/empirical run test:built && npm run test:pages",
+    "test:services": "bash scripts/test-services.sh"
   }
 }
