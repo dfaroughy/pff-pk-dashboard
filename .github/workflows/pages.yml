@@ -64,7 +64,8 @@ jobs:
         run: |
           pff_pk/.venv/bin/python dashboard/services/huggingface_space/build_bundle.py --pff-repo pff_pk --synthetic-repo synthetic_priors --output /tmp/space-bundle
           uv venv --python 3.12 /tmp/space-runtime
-          uv pip install --python /tmp/space-runtime/bin/python -r /tmp/space-bundle/requirements.txt
+          # Match the lockfile's resolution across the trusted PyPI and PyTorch indexes.
+          uv pip install --index-strategy unsafe-best-match --python /tmp/space-runtime/bin/python -r /tmp/space-bundle/requirements.txt
           cd dashboard
           PFF_PYTHON=/tmp/space-runtime/bin/python PFF_REPO=/tmp/space-bundle npm run test:services
       - name: Record tested scientific source revisions
