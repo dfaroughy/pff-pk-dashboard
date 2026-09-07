@@ -142,7 +142,7 @@ afterEach(() => {
 test("exposes only conservative public inference controls", async () => {
   render(<ModelPanel study={study} onResult={vi.fn()} />);
 
-  const run = screen.getByRole("button", { name: "Run zero-shot inference" });
+  const run = screen.getByRole("button", { name: "Run model" });
   const models = screen.getByLabelText("Models");
   expect(run.compareDocumentPosition(models) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
@@ -197,7 +197,7 @@ test("Pythia is generation-only and sends the baseline protocol", async () => {
 
   expect(screen.queryByRole("button", { name: "+ Add intervention" })).toBeNull();
   expect(screen.queryByLabelText("Dose 1 amount in mg")).toBeNull();
-  const runButton = screen.getByRole("button", { name: "Run zero-shot inference" });
+  const runButton = screen.getByRole("button", { name: "Run model" });
   expect(screen.getByRole("progressbar", { name: "Inference progress" }).getAttribute("aria-valuenow")).toBe("0");
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   await user.click(runButton);
@@ -226,7 +226,7 @@ test("Pythia ignores an observed multidose protocol and submits a canonical refe
     ],
   }} onResult={vi.fn()} />);
 
-  const runButton = screen.getByRole("button", { name: "Run zero-shot inference" });
+  const runButton = screen.getByRole("button", { name: "Run model" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   await user.click(runButton);
 
@@ -244,7 +244,7 @@ test("the user can select a reproducible inference seed", async () => {
   const seed = screen.getByLabelText("Random seed");
   await user.clear(seed);
   await user.type(seed, "1729");
-  const runButton = screen.getByRole("button", { name: "Run zero-shot inference" });
+  const runButton = screen.getByRole("button", { name: "Run model" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   await user.click(runButton);
 
@@ -259,7 +259,7 @@ test("intervention dose and time accept full decimal replacement and reach infer
   render(<ModelPanel study={study} onResult={onResult} />);
 
   await user.selectOptions(screen.getByLabelText("Models"), "pythia_dose");
-  const runButton = await screen.findByRole("button", { name: "Run zero-shot inference" });
+  const runButton = await screen.findByRole("button", { name: "Run model" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   expect((screen.getByLabelText("Dose 1 time in h") as HTMLInputElement).disabled).toBe(true);
   expect((screen.getByRole("button", { name: "Remove dose 1" }) as HTMLButtonElement).disabled).toBe(true);
@@ -291,7 +291,7 @@ test("invalid transient values disable inference instead of becoming zero", asyn
   const user = userEvent.setup();
   render(<ModelPanel study={study} onResult={vi.fn()} />);
   await user.selectOptions(screen.getByLabelText("Models"), "pythia_dose");
-  const runButton = await screen.findByRole("button", { name: "Run zero-shot inference" });
+  const runButton = await screen.findByRole("button", { name: "Run model" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
 
   await user.clear(screen.getByLabelText("Dose 1 amount in mg"));
@@ -308,7 +308,7 @@ test("editing a protocol aborts and discards an in-flight result", async () => {
   render(<ModelPanel study={study} onResult={onResult} />);
 
   await user.selectOptions(screen.getByLabelText("Models"), "pythia_dose");
-  const runButton = await screen.findByRole("button", { name: "Run zero-shot inference" });
+  const runButton = await screen.findByRole("button", { name: "Run model" });
   await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
   await user.click(runButton);
   await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
@@ -318,7 +318,7 @@ test("editing a protocol aborts and discards an in-flight result", async () => {
   await user.type(amount, "20");
   resolveInference(response);
 
-  await waitFor(() => expect(screen.getByRole("button", { name: "Run zero-shot inference" })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("button", { name: "Run model" })).toBeTruthy());
   expect(onResult).not.toHaveBeenCalledWith(response);
   expect(onResult).toHaveBeenCalledWith(null);
 });

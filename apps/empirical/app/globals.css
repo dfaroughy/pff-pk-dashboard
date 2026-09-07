@@ -139,7 +139,7 @@ button { cursor: pointer; }
 .study-meta dt { margin-bottom: 6px; color: var(--muted); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
 .study-meta dd { margin: 0; font-size: 11px; font-weight: 600; text-transform: capitalize; }
 .overview-grid { display: grid; grid-template-columns: minmax(350px, .8fr) minmax(600px, 1.2fr); gap: 10px; margin-top: 10px; }
-.synthetic-overview { grid-template-columns: minmax(600px, 1.7fr) minmax(340px, .7fr); align-items: start; margin-top: 10px; }
+.synthetic-overview, .description-overview { grid-template-columns: minmax(0, 1fr); align-items: start; margin-top: 10px; }
 .description-card { min-width: 0; padding: 18px; }
 .description-card p {
   max-width: 105ch;
@@ -235,7 +235,7 @@ button { cursor: pointer; }
 .synthetic-dose-kind { color: var(--cyan); text-transform: uppercase; }
 .synthetic-dose-actions { display: flex; gap: 6px; margin-top: 9px; }
 .synthetic-dose-actions .secondary-button { margin: 0; }
-.synthetic-generate-controls { display: grid; grid-template-columns: minmax(130px, .55fr) minmax(180px, .75fr) minmax(220px, 1fr); gap: 8px; align-items: end; margin: 0 0 12px; }
+.synthetic-generate-controls { display: grid; grid-template-columns: minmax(120px, .55fr) minmax(170px, .75fr) minmax(145px, .6fr) minmax(210px, 1fr); gap: 8px; align-items: end; margin: 0 0 12px; }
 .synthetic-generate-controls label { color: var(--muted); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
 .synthetic-generate-controls input { display: block; width: 100%; margin-top: 4px; border: 1px solid var(--line-bright); border-radius: 0; padding: 8px; background: var(--paper); color: var(--ink); font-family: var(--font-data); }
 .synthetic-generate-controls input:focus { border-color: var(--cyan); outline: none; }
@@ -306,6 +306,18 @@ button { cursor: pointer; }
 .axis-label { fill: var(--ink); font-family: var(--font-data); font-size: 14px; }
 .plot-y-title { font-weight: 600; }
 .distribution-card, .model-panel { min-width: 0; padding: 16px; }
+.model-action-rail {
+  margin-top: 18px;
+  border: 1px solid var(--acid);
+  border-left-width: 6px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--acid-fill) 13%, var(--paper));
+}
+.model-action-row { display: grid; grid-template-columns: minmax(145px, .55fr) minmax(220px, 1.15fr) minmax(135px, .55fr) minmax(220px, 1fr); align-items: end; gap: 10px; }
+.model-action-identity { align-self: center; display: flex; align-items: center; gap: 9px; }
+.model-action-identity h2 { white-space: nowrap; }
+.model-action-rail .model-select, .model-action-rail .model-controls, .model-action-rail .inference-actions { margin: 0; }
+.model-action-rail .event-list { margin-top: 12px; }
 .status {
   border: 1px solid var(--line-bright);
   padding: 5px 8px;
@@ -352,9 +364,9 @@ button { cursor: pointer; }
 .primary-button { width: 100%; border: 1px solid var(--acid-fill); border-radius: 0; padding: 10px; background: var(--acid-fill); color: #142015; font-size: 10px; font-weight: 750; letter-spacing: .035em; }
 .primary-button:hover:not(:disabled) { background: transparent; color: var(--acid); }
 .primary-button:disabled { border-color: var(--line); background: var(--line); color: var(--muted); cursor: not-allowed; }
-.inference-progress { position: relative; isolation: isolate; overflow: hidden; background: var(--panel-raised); color: var(--ink); transition: border-color .2s ease; }
+.inference-progress { position: relative; isolation: isolate; overflow: hidden; background: var(--acid-fill); color: #142015; transition: border-color .2s ease; }
 .inference-progress:hover:not(:disabled) { border-color: var(--acid-fill); background: var(--panel-raised); color: var(--ink); }
-.inference-progress:disabled { border-color: var(--line-bright); background: var(--panel-raised); color: var(--muted); }
+.inference-progress:disabled { border-color: var(--acid); background: color-mix(in srgb, var(--acid-fill) 58%, var(--panel-raised)); color: #142015; opacity: .68; }
 .dashboard-shell[data-theme="dark"] .inference-progress[data-filled="true"] { color: #142015; }
 .inference-progress-fill { position: absolute; z-index: 0; inset: 0 auto 0 0; background: var(--acid-fill); transition: width .18s linear; }
 .inference-progress-label { position: relative; z-index: 1; }
@@ -372,6 +384,9 @@ button { cursor: pointer; }
   .synthetic-model-grid { grid-template-columns: 1fr; }
   .results-grid { grid-template-columns: 1fr 1fr; }
   .results-grid .distribution-card { grid-column: 1 / -1; }
+}
+@media (max-width: 1100px) {
+  .model-action-row { grid-template-columns: minmax(150px, .6fr) minmax(230px, 1fr); }
 }
 @media (max-width: 900px) {
   .empirical-cohort-bar { display: block; }

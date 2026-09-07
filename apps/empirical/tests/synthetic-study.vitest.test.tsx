@@ -9,6 +9,7 @@ import { generateSyntheticCohort, previewSyntheticObservationTimes, sampleSynthe
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -52,7 +53,7 @@ test("clamps public synthetic cohort controls and emits a generated cohort", asy
   const onGenerate = vi.fn();
   render(<SyntheticStudyBuilder onGenerate={onGenerate} onInvalidate={vi.fn()} />);
 
-  const individuals = screen.getByLabelText(/Individuals/) as HTMLInputElement;
+  const individuals = screen.getByLabelText("Cohort individuals") as HTMLInputElement;
   const observations = screen.getByLabelText(/Observations per individual/) as HTMLInputElement;
   fireEvent.change(individuals, { target: { value: "99" } });
   fireEvent.change(observations, { target: { value: "99" } });
@@ -61,7 +62,7 @@ test("clamps public synthetic cohort controls and emits a generated cohort", asy
 
   expect(screen.queryByText(/Interactive prior draw/)).toBeNull();
   expect(screen.getByRole("button", { name: "Draw new compartment model" }).closest(".synthetic-graph-panel")).toBeTruthy();
-  const generate = screen.getByRole("button", { name: "Generate synthetic cohort" });
+  const generate = screen.getByRole("button", { name: "Generate new cohort" });
   const compartment = screen.getByRole("button", { name: "Compartment graph" });
   expect(generate.compareDocumentPosition(compartment) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   expect(compartment.getAttribute("aria-expanded")).toBe("true");
@@ -80,6 +81,24 @@ test("clamps public synthetic cohort controls and emits a generated cohort", asy
   expect(onGenerate.mock.calls[0][0].subjects).toHaveLength(16);
   expect(onGenerate.mock.calls[0][0].subjects[0].points).toHaveLength(20);
   expect(onGenerate.mock.calls[0][0].doseEvents).toHaveLength(4);
+});
+
+test("draws a fresh cohort seed by default and honors a user-provided seed", async () => {
+  const user = userEvent.setup();
+  const onGenerate = vi.fn();
+  vi.spyOn(Math, "random").mockReturnValue(0.25);
+  render(<SyntheticStudyBuilder onGenerate={onGenerate} onInvalidate={vi.fn()} />);
+
+  const seed = screen.getByLabelText("Cohort seed") as HTMLInputElement;
+  expect(seed.valueAsNumber).toBe(46);
+  await user.click(screen.getByRole("button", { name: "Generate new cohort" }));
+  expect(seed.valueAsNumber).toBe(536870911);
+  expect(onGenerate.mock.calls[0][0].id).toContain("synthetic-v6-536870911-");
+
+  fireEvent.change(seed, { target: { value: "1729" } });
+  await user.click(screen.getByRole("button", { name: "Generate new cohort" }));
+  expect(seed.valueAsNumber).toBe(1729);
+  expect(onGenerate.mock.calls[1][0].id).toContain("synthetic-v6-1729-");
 });
 
 test("edits kinetic laws and keeps the rendered equations synchronized", async () => {
@@ -110,7 +129,7 @@ test("uses the selected acquisition scheduler for preview and generation", async
   await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
   await user.selectOptions(screen.getByLabelText("Observation schedule"), "unscheduled");
   await user.selectOptions(screen.getByLabelText("Time weighting"), "early");
-  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
+  await user.click(screen.getByRole("button", { name: "Generate new cohort" }));
 
   const study = onGenerate.mock.calls[0][0];
   expect(study.subjects).toHaveLength(10);
@@ -142,7 +161,7 @@ test("accepts a user-defined relative dose", async () => {
   await user.clear(dose);
   await user.type(dose, "2.5");
   await user.tab();
-  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
+  await user.click(screen.getByRole("button", { name: "Generate new cohort" }));
 
   expect(onGenerate.mock.calls[0][0].doseEvents[0].amount).toBe(2.5);
 });
@@ -163,7 +182,7 @@ test("adds and edits a future dose event on the protocol timeline", async () => 
 
   expect(screen.getByText("infusion")).toBeTruthy();
   expect(document.querySelectorAll(".timeline-infusion")).toHaveLength(1);
-  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
+  await user.click(screen.getByRole("button", { name: "Generate new cohort" }));
   expect(onGenerate.mock.calls[0][0].doseEvents[1]).toMatchObject({ time: 0.6, amount: 4, duration: 0.1 });
 });
 
@@ -194,16 +213,16 @@ test("keeps the previous synthetic plots visible but faded until regeneration", 
   expect(results.dataset.stale).toBeUndefined();
   expect([...results.querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual(["Individuals", "VPC", "PK quantities"]);
   expect(screen.getByRole("switch", { name: "concentration profiles linear scale" }).getAttribute("aria-checked")).toBe("true");
-  expect((screen.getByLabelText(/Individuals/) as HTMLInputElement).valueAsNumber).toBe(10);
+  expect((screen.getByLabelText("Cohort individuals") as HTMLInputElement).valueAsNumber).toBe(10);
   expect((screen.getByLabelText(/Observations per individual/) as HTMLInputElement).valueAsNumber).toBe(8);
   await user.click(screen.getByRole("button", { name: "Dose and observation protocol" }));
   expect((screen.getByLabelText("Time weighting") as HTMLSelectElement).value).toBe("early");
 
-  fireEvent.change(screen.getByLabelText(/Individuals/), { target: { value: "11" } });
+  fireEvent.change(screen.getByLabelText("Cohort individuals"), { target: { value: "11" } });
   expect(screen.getByRole("img", { name: "Observed visual predictive check for Synthetic cohort" })).toBeTruthy();
   expect(results.dataset.stale).toBe("true");
   expect(screen.getByText("Generate the edited cohort to reactivate zero-shot inference.")).toBeTruthy();
 
-  await user.click(screen.getByRole("button", { name: "Generate synthetic cohort" }));
+  await user.click(screen.getByRole("button", { name: "Generate new cohort" }));
   await waitFor(() => expect(results.dataset.stale).toBeUndefined());
 });

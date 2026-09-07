@@ -245,8 +245,10 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
   onGenerate: (study: Study) => void;
   onInvalidate: () => void;
 }) {
-  const [modelIndex, setModelIndex] = useState(0);
   const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(SYNTHETIC_INITIAL_SEED));
+  const [generationSeed, setGenerationSeed] = useState(SYNTHETIC_INITIAL_SEED);
+  const [manualSeed, setManualSeed] = useState(false);
+  const [editedLatentModel, setEditedLatentModel] = useState(false);
   const [doseEvents, setDoseEvents] = useState<DoseEvent[]>(() => [initialDose(model.graph.route)]);
   const [acquisition, setAcquisition] = useState<SyntheticAcquisition>(SYNTHETIC_INITIAL_ACQUISITION);
   const [gridDraw, setGridDraw] = useState(0);
@@ -273,16 +275,48 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
   ), [acquisition, gridDraw, individuals, model.seed, observations]);
   const equations = useMemo(() => model.graph.nodes.map((node) => balanceEquation(model.graph, node.id)), [model.graph]);
 
+  const randomSeed = () => {
+    const upper = 2 ** 31 - 1;
+    const draw = Math.floor(Math.random() * upper);
+    return draw === generationSeed ? (draw + 1) % upper : draw;
+  };
   const drawModel = () => {
-    const nextIndex = modelIndex + 1;
-    const nextModel = sampleSyntheticModel(SYNTHETIC_INITIAL_SEED + nextIndex);
-    setModelIndex(nextIndex);
+    const nextSeed = randomSeed();
+    const nextModel = sampleSyntheticModel(nextSeed);
+    setGenerationSeed(nextSeed);
+    setManualSeed(false);
+    setEditedLatentModel(true);
     setModel(nextModel);
-    setDoseEvents([initialDose(nextModel.graph.route)]);
+    setDoseEvents((current) => current.map((event) => ({ ...event, route: nextModel.graph.route })));
     setGridDraw(0);
     onInvalidate();
   };
-  const generate = () => onGenerate(generateSyntheticCohort(activeModel, individuals, observations, acquisition, gridDraw));
+  const generate = () => {
+    let nextModel = activeModel;
+    if (!editedLatentModel) {
+      const nextSeed = manualSeed ? generationSeed : randomSeed();
+      const sampled = sampleSyntheticModel(nextSeed);
+      const nextEvents = doseEvents.map((event) => ({ ...event, route: sampled.graph.route }));
+      nextModel = {
+        ...sampled,
+        protocol: {
+          ...sampled.protocol,
+          events: nextEvents,
+          multidose: nextEvents.length > 1,
+          infusion: nextEvents.some((event) => event.duration > 0),
+          pattern: nextEvents.length > 1 ? "maintenance" : "single",
+          rawProtocolHorizon: 1,
+        },
+      };
+      setGenerationSeed(nextSeed);
+      setModel(sampled);
+      setDoseEvents(nextEvents);
+      setGridDraw(0);
+    }
+    setManualSeed(false);
+    setEditedLatentModel(false);
+    onGenerate(generateSyntheticCohort(nextModel, individuals, observations, acquisition, editedLatentModel ? gridDraw : 0));
+  };
   const changeRate = (id: string, patch: Partial<RateDraw>) => {
     setModel((current) => {
       const rates = current.kinetics.rates.map((rate) => rate.id === id ? { ...rate, ...patch } : rate);
@@ -295,6 +329,7 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
         },
       };
     });
+    setEditedLatentModel(true);
     onInvalidate();
   };
   const changeAcquisition = (patch: Partial<SyntheticAcquisition>) => {
@@ -352,14 +387,25 @@ export function SyntheticStudyBuilder({ onGenerate, onInvalidate }: {
     </div>
     <div className="synthetic-generate-controls">
       <label>Individuals
-        <input type="number" min={SYNTHETIC_LIMITS.individuals.min} max={SYNTHETIC_LIMITS.individuals.max} step="1" value={individuals} onChange={(event) => changeIndividuals(Number(event.target.value))} />
+        <input aria-label="Cohort individuals" type="number" min={SYNTHETIC_LIMITS.individuals.min} max={SYNTHETIC_LIMITS.individuals.max} step="1" value={individuals} onChange={(event) => changeIndividuals(Number(event.target.value))} />
         <small>2–16</small>
       </label>
       <label>Observations per individual
         <input type="number" min={SYNTHETIC_LIMITS.observations.min} max={SYNTHETIC_LIMITS.observations.max} step="1" value={observations} onChange={(event) => changeObservations(Number(event.target.value))} />
         <small>2–20</small>
       </label>
-      <button className="primary-button" type="button" onClick={generate}>Generate synthetic cohort</button>
+      <label>Cohort seed
+        <input aria-label="Cohort seed" type="number" min="0" max={2 ** 31 - 1} step="1" value={generationSeed} onChange={(event) => {
+          const value = Number(event.target.value);
+          if (!Number.isFinite(value)) return;
+          setGenerationSeed(Math.max(0, Math.min(2 ** 31 - 1, Math.round(value))));
+          setManualSeed(true);
+          setEditedLatentModel(false);
+          onInvalidate();
+        }} />
+        <small>Random unless edited</small>
+      </label>
+      <button className="primary-button" type="button" onClick={generate}>Generate new cohort</button>
     </div>
     <div className="synthetic-accordion-stack">
       <CollapsibleSection title="Compartment graph" open={openSections.graph} onToggle={() => toggleSection("graph")}>

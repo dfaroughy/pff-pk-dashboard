@@ -367,23 +367,26 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
       }
     }
   };
-  return <section className="model-panel card">
-    <div className="section-heading">
-      <h2>Pythia-PK</h2>
-      <span className={selectedStatus?.ready ? "status connected" : "status"}>{selectedStatus?.ready ? `CPU · ${selectedStatus.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span>
+  return <section className="model-panel model-action-rail">
+    <div className="model-action-row">
+      <div className="model-action-identity"><h2>Pythia-PK</h2><span className={selectedStatus?.ready ? "status connected" : "status"}>{selectedStatus?.ready ? `CPU · ${selectedStatus.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span></div>
+      <div className="inference-actions">
+        <button type="button" className="primary-button inference-progress" data-filled={progress >= 50 ? "true" : undefined} aria-label={running ? "Running model" : "Run model"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
+          <span className="inference-progress-fill" role="progressbar" aria-label="Inference progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} style={{ width: `${progress}%` }} />
+          <span className="inference-progress-label">{running ? "Running model…" : "Run model"}</span>
+        </button>
+      </div>
+      <label className="model-select">Model
+        <select aria-label="Models" value={modelId} onChange={(event) => selectModel(event.target.value as ModelId)}>
+          <option value="pythia">Pythia</option>
+          <option value="pythia_dose">Pythia-Dose</option>
+        </select>
+      </label>
+      <div className="model-controls">
+        <label className={drawsError ? "invalid" : ""}>Individuals <input aria-label="Generated individuals" aria-invalid={Boolean(drawsError)} type="number" min="1" max={maxDraws} step="1" value={draws} onChange={(event) => { setDraws(event.target.value); invalidate(); }} />{drawsError && <small className="field-error">{drawsError}</small>}</label>
+        <label className={seedError ? "invalid" : ""}>Seed <input aria-label="Random seed" aria-invalid={Boolean(seedError)} type="number" min="0" max={2**31 - 1} step="1" value={seed} onChange={(event) => { setSeed(event.target.value); invalidate(); }} />{seedError && <small className="field-error">{seedError}</small>}</label>
+      </div>
     </div>
-    <div className="inference-actions">
-      <button type="button" className="primary-button inference-progress" data-filled={progress >= 50 ? "true" : undefined} aria-label={running ? "Running zero-shot inference" : "Run zero-shot inference"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
-        <span className="inference-progress-fill" role="progressbar" aria-label="Inference progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} style={{ width: `${progress}%` }} />
-        <span className="inference-progress-label">{running ? "Running zero-shot inference…" : "Run zero-shot inference"}</span>
-      </button>
-    </div>
-    <label className="model-select">Models
-      <select aria-label="Models" value={modelId} onChange={(event) => selectModel(event.target.value as ModelId)}>
-        <option value="pythia">Pythia</option>
-        <option value="pythia_dose">Pythia-Dose</option>
-      </select>
-    </label>
     {modelId === "pythia_dose" && <><div className="event-list">
       {events.map((event, index) => {
         const eventErrors = protocol.errors[event.id] ?? {};
@@ -399,10 +402,6 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
       {!events.length && <p className="empty-protocol">Add at least one dose event.</p>}
     </div>
     <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div></>}
-    <div className="model-controls">
-      <label className={drawsError ? "invalid" : ""}>Generated individuals <input aria-invalid={Boolean(drawsError)} type="number" min="1" max={maxDraws} step="1" value={draws} onChange={(event) => { setDraws(event.target.value); invalidate(); }} />{drawsError && <small className="field-error">{drawsError}</small>}</label>
-      <label className={seedError ? "invalid" : ""}>Random seed <input aria-invalid={Boolean(seedError)} type="number" min="0" max={2**31 - 1} step="1" value={seed} onChange={(event) => { setSeed(event.target.value); invalidate(); }} />{seedError && <small className="field-error">{seedError}</small>}</label>
-    </div>
     {!eligible && <p className="model-warning">Interactive Pythia-PK inference requires at least two individual trajectories.</p>}
     {!selectedStatus?.ready && <p className="model-warning">{hosted ? "The hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
     {modelId === "pythia_dose" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
@@ -412,18 +411,17 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
 }
 
 function InactiveModelPanel({ stale = false }: { stale?: boolean }) {
-  return <section className="model-panel card inactive-model-panel">
-    <div className="section-heading">
-      <h2>Pythia-PK</h2>
-      <span className="status">{stale ? "Cohort changed" : "Awaiting cohort"}</span>
-    </div>
-    <div className="inference-actions"><button type="button" className="primary-button inference-progress" disabled><span className="inference-progress-label">Run zero-shot inference</span></button></div>
-    <label className="model-select">Models
-      <select aria-label="Inactive model selection" value="pythia" disabled><option>Pythia</option></select>
-    </label>
-    <div className="model-controls">
-      <label>Generated individuals <input type="number" value="20" disabled readOnly /></label>
-      <label>Random seed <input type="number" value="43" disabled readOnly /></label>
+  return <section className="model-panel model-action-rail inactive-model-panel">
+    <div className="model-action-row">
+      <div className="model-action-identity"><h2>Pythia-PK</h2><span className="status">{stale ? "Cohort changed" : "Awaiting cohort"}</span></div>
+      <div className="inference-actions"><button type="button" className="primary-button inference-progress" disabled><span className="inference-progress-label">Run model</span></button></div>
+      <label className="model-select">Model
+        <select aria-label="Inactive model selection" value="pythia" disabled><option>Pythia</option></select>
+      </label>
+      <div className="model-controls">
+        <label>Individuals <input type="number" value="20" disabled readOnly /></label>
+        <label>Seed <input type="number" value="43" disabled readOnly /></label>
+      </div>
     </div>
     <p className="model-warning">{stale ? "Generate the edited cohort to reactivate zero-shot inference." : "Generate the synthetic cohort to activate zero-shot inference."}</p>
   </section>;
@@ -533,6 +531,9 @@ export function Dashboard() {
             </dl>
           </section>
         </section>}
+        {activeStudy && (!syntheticMode || !syntheticStale)
+          ? <ModelPanel key={activeStudy.id} study={activeStudy} onResult={setModelResult} />
+          : <InactiveModelPanel stale={syntheticStale} />}
         {activeStudy ? <>
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">
@@ -555,10 +556,8 @@ export function Dashboard() {
             onInvalidate={() => { if (syntheticStudy) setSyntheticStale(true); }}
             onGenerate={(study) => { setSyntheticStudy(study); setSyntheticStale(false); setModelResult(null); }}
           />
-          {syntheticStudy && !syntheticStale ? <ModelPanel key={syntheticStudy.id} study={syntheticStudy} onResult={setModelResult} /> : <InactiveModelPanel stale={syntheticStale} />}
-        </section> : <section className="overview-grid">
+        </section> : <section className="overview-grid description-overview">
           <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} /></article>
-          <ModelPanel key={selected.id} study={selected} onResult={setModelResult} />
         </section>}
       </main>
     </div>
