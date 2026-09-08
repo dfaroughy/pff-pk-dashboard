@@ -304,9 +304,11 @@ button { cursor: pointer; }
   padding: 12px 14px;
   background: var(--paper);
 }
-.model-action-row { display: grid; grid-template-columns: minmax(145px, .55fr) minmax(220px, 1.15fr) minmax(135px, .55fr) minmax(220px, 1fr); align-items: end; gap: 10px; }
-.model-action-identity { align-self: center; display: flex; align-items: center; gap: 9px; }
-.model-action-identity h2 { white-space: nowrap; }
+.model-action-row { display: grid; grid-template-columns: minmax(190px, 1fr) 160px minmax(135px, .8fr) minmax(220px, 1fr); align-items: end; gap: 16px; }
+.model-action-row > * { min-width: 0; }
+.model-action-identity { align-self: center; display: flex; flex-wrap: wrap; align-items: center; gap: 7px 12px; }
+.model-action-identity h2 { margin: 0; }
+.model-action-rail .inference-progress { min-height: 34px; padding: 7px 12px; }
 .model-action-rail .model-select, .model-action-rail .model-controls, .model-action-rail .inference-actions { margin: 0; }
 .model-action-rail .event-list { margin-top: 12px; }
 .status {
@@ -379,7 +381,8 @@ button { cursor: pointer; }
   .results-grid .distribution-card { grid-column: 1 / -1; }
 }
 @media (max-width: 1100px) {
-  .model-action-row { grid-template-columns: minmax(150px, .6fr) minmax(230px, 1fr); }
+  .model-action-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .model-action-rail .inference-actions { width: min(100%, 160px); justify-self: end; }
 }
 @media (max-width: 900px) {
   .empirical-cohort-bar { display: block; }
