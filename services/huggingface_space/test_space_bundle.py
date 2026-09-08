@@ -31,6 +31,8 @@ class SpaceSourceTests(unittest.TestCase):
     def test_runtime_dependency_input_is_cpu_only(self) -> None:
         requirements = (self.root / "requirements.in").read_text(encoding="utf-8")
         self.assertIn("torch==2.8.0+cpu", requirements)
+        self.assertIn("gradio[oauth,mcp]==6.2.0", requirements)
+        self.assertIn("spaces", requirements)
         self.assertNotIn("pharmpy-core", requirements)
 
     def test_public_solver_is_fixed(self) -> None:
@@ -56,8 +58,8 @@ class BundleSafetyTests(unittest.TestCase):
         self.synthetic = self.root / "prior"
         (self.pff / "pff_pk").mkdir(parents=True)
         (self.pff / "pff_pk" / "__init__.py").write_text("")
-        (self.synthetic / "synthetic_priors").mkdir(parents=True)
-        (self.synthetic / "synthetic_priors" / "contracts.py").write_text("# contract\n")
+        (self.synthetic / "synthetic_priors" / "schemas").mkdir(parents=True)
+        (self.synthetic / "synthetic_priors" / "schemas" / "contracts.py").write_text("# contract\n")
         self.output = self.root / "bundle"
 
     def test_provenance_hashes_and_managed_replacement(self):

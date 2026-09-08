@@ -41,37 +41,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: dashboard
-      - uses: actions/checkout@v4
-        with:
-          repository: dfaroughy/pff_pk
-          ref: main
-          ssh-key: ${{ secrets.PFF_PK_READ_KEY }}
-          persist-credentials: false
-          path: pff_pk
-      - uses: actions/checkout@v4
-        with:
-          repository: dfaroughy/synthetic_priors
-          ref: main
-          ssh-key: ${{ secrets.SYNTHETIC_PRIORS_READ_KEY }}
-          persist-credentials: false
-          path: synthetic_priors
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --frozen --extra dev
-        working-directory: pff_pk
-      - run: npm run test:services
-        working-directory: dashboard
+      - name: Fetch verified deployed scientific sources
+        run: python3 dashboard/scripts/fetch-space-release.py /tmp/deployed-space
       - name: Test the locked Linux CPU Space runtime
         run: |
-          pff_pk/.venv/bin/python dashboard/services/huggingface_space/build_bundle.py --pff-repo pff_pk --synthetic-repo synthetic_priors --output /tmp/space-bundle
+          python3 dashboard/services/huggingface_space/build_bundle.py --pff-repo /tmp/deployed-space --synthetic-repo /tmp/deployed-space --output /tmp/space-bundle
           uv venv --python 3.12 /tmp/space-runtime
           # Match the lockfile's resolution across the trusted PyPI and PyTorch indexes.
           uv pip install --index-strategy unsafe-best-match --python /tmp/space-runtime/bin/python -r /tmp/space-bundle/requirements.txt
           cd dashboard
           PFF_PYTHON=/tmp/space-runtime/bin/python PFF_REPO=/tmp/space-bundle npm run test:services
-      - name: Record tested scientific source revisions
-        run: |
-          git -C pff_pk rev-parse HEAD
-          git -C synthetic_priors rev-parse HEAD
+      - name: Record tested service release
+        run: cat dashboard/services/huggingface_space/release.json
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

@@ -6,7 +6,7 @@ export type ModelId = "pythia" | "pythia_dose";
 
 export type InferenceRequest = {
   modelId: ModelId;
-  study: Pick<Study, "id" | "drug" | "study" | "source" | "route" | "dose" | "doseUnit" | "concentrationUnit" | "timeUnit" | "subjects">;
+  study: Pick<Study, "id" | "drug" | "study" | "source" | "route" | "dose" | "doseUnit" | "doseEvents" | "concentrationUnit" | "timeUnit" | "subjects">;
   doseEvents: DoseEvent[];
   nDraws: number;
   batchSize: number;
@@ -96,6 +96,17 @@ async function hostedPrediction<T>(apiRoot: string, endpoint: string, payload: R
   const client = await hostedClient(apiRoot);
   const result = await client.predict<unknown>(endpoint, payload);
   return gradioOutput<T>(result.data);
+}
+
+export async function syntheticRequest<T>(request: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  const { apiRoot } = dashboardRuntimeConfig();
+  if (!isLocalApi(apiRoot)) return abortable(hostedPrediction<T>(apiRoot, "/synthetic", { payload: request }), signal);
+  const response = await fetch(`${apiRoot}/synthetic`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request), signal,
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error ?? "Synthetic generator unavailable");
+  return payload as T;
 }
 
 function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {

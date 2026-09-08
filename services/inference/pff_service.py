@@ -14,6 +14,7 @@ import math
 import os
 import sys
 import time
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 EMPIRICAL_APP_ROOT = REPOSITORY_ROOT / "apps" / "empirical"
 PFF_ROOT = Path(os.environ.get("PFF_REPO", REPOSITORY_ROOT.parent / "pff_pk")).resolve()
 sys.path.insert(0, str(PFF_ROOT))
+sys.path.insert(0, str(REPOSITORY_ROOT))
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
@@ -230,6 +232,34 @@ def target_dose_events(
     return sorted(events, key=lambda event: float(event["time"]))
 
 
+def with_context_protocols(batch, study: dict, cohort: dict):
+    """Preserve supplied shared/individual dose histories in the model adapter.
+
+    The generic empirical helper defaults to one unit bolus. Canonical synthetic
+    draws may instead contain infusions, multiple events or individual doses.
+    This only fills existing FlowBatch fields; it does not alter model code.
+    """
+    raw_subjects = {str(s.get("id")): s for s in study.get("subjects", [])}
+    histories = []
+    reference = _finite_reference_dose(cohort)
+    for identifier in batch.context_ids[0]:
+        person = raw_subjects[identifier]
+        raw = person.get("doseEvents") or study.get("doseEvents")
+        if raw is None:
+            raw = [{"time": 0., "amount": reference, "duration": 0., "route": cohort["route"]}]
+        if not isinstance(raw, list) or not 1 <= len(raw) <= 32 or any(not isinstance(e, dict) for e in raw):
+            raise ValueError("context dose history must contain 1–32 events")
+        events = target_dose_events([{**e, "unit": e.get("unit", cohort["dose_units"])} for e in raw], cohort)
+        histories.append([[e["time"] / cohort["horizon"], e["amount"] / reference,
+                           e["duration"] / cohort["horizon"], float(e["route"] == "oral")] for e in events])
+    tensor = torch.zeros(1, len(histories), max(map(len, histories)), 4)
+    mask = torch.zeros(tensor.shape[:-1], dtype=torch.bool)
+    for i, values in enumerate(histories):
+        tensor[0, i, :len(values)] = torch.tensor(values)
+        mask[0, i, :len(values)] = True
+    return replace(batch, context_protocol_events=tensor, context_protocol_event_mask=mask)
+
+
 def generation_only_protocol(
     raw_events: Any, cohort: dict[str, Any]
 ) -> list[dict[str, float | str]]:
@@ -348,6 +378,8 @@ class ModelRuntime:
             # as a model input.
             target_dose_events=target_events if self.supports_dose else None,
         )
+        if self.supports_dose:
+            cpu_batch = with_context_protocols(cpu_batch, request.get("study") or {}, cohort)
         cpu_batch = union_query_batch(cpu_batch)
         query_time = cpu_batch.target_time.numpy()[0, :, 0] * cohort["horizon"]
         seed = bounded_integer(request.get("seed", 43), "seed", 0, 2**31 - 1)
@@ -517,7 +549,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/inference":
+        if self.path not in ("/inference", "/synthetic"):
             self._send(404, {"error": "not found"})
             return
         try:
@@ -525,7 +557,11 @@ class Handler(BaseHTTPRequestHandler):
             if length <= 0 or length > 10_000_000:
                 raise ValueError("invalid request size")
             request = json.loads(self.rfile.read(length))
-            self._send(200, cached_inference(request))
+            if self.path == "/synthetic":
+                from services.inference.synthetic_service import synthetic_request
+                self._send(200, synthetic_request(request))
+            else:
+                self._send(200, cached_inference(request))
         except (ValueError, KeyError, TypeError, FileNotFoundError) as error:
             self._send(400, {"error": str(error)})
         except Exception as error:  # keep the local service alive and report cleanly

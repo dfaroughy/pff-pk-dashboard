@@ -1,8 +1,13 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-gradio==6.2.0
+gradio[oauth,mcp]==6.2.0
+# These are also installed by the Hugging Face Gradio image.
+spaces
+uvicorn>=0.14.0
+websockets>=10.4
 huggingface-hub>=1.0,<2
 lightning>=2.6,<2.7
 numpy>=1.26,<3
 pandas>=2.2,<4
 pyyaml>=6,<7
+scipy==1.17.1
 torch==2.8.0+cpu

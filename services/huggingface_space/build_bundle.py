@@ -52,7 +52,7 @@ def build_bundle(pff_repo: Path, synthetic_repo: Path, output: Path) -> Path:
             raise ValueError(
                 "refusing to replace modified/unrecognized output; choose a new output (manifest mismatch)"
             )
-    contracts = roots[1] / "synthetic_priors" / "contracts.py"
+    contracts = roots[1] / "synthetic_priors" / "schemas" / "contracts.py"
     if not (roots[0] / "pff_pk" / "__init__.py").is_file() or not contracts.is_file():
         raise ValueError("missing model package or synthetic contracts")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -69,12 +69,11 @@ def build_bundle(pff_repo: Path, synthetic_repo: Path, output: Path) -> Path:
         service = stage / "services" / "inference"
         service.mkdir(parents=True)
         shutil.copy2(here.parent / "inference" / "pff_service.py", service / "pff_service.py")
+        shutil.copy2(here.parent / "inference" / "synthetic_service.py", service / "synthetic_service.py")
         (stage / "services" / "__init__.py").touch()
         (service / "__init__.py").touch()
-        synthetic = stage / "synthetic_priors"
-        synthetic.mkdir()
-        shutil.copy2(contracts, synthetic / "contracts.py")
-        (synthetic / "__init__.py").write_text('"""Inference-only study contracts."""\n')
+        shutil.copytree(roots[1] / "synthetic_priors", stage / "synthetic_priors",
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store"))
         for path in stage.rglob("*"):
             if path.name.startswith(".env") or path.suffix in {
                 ".ckpt",

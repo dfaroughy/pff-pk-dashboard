@@ -9,7 +9,7 @@ import { dashboardRuntimeConfig } from "../lib/runtime-config";
 import type { Corpus, Study } from "../lib/types";
 import { ModelTrajectoryChart, ModelVpcChart, PkDistributionChart, TrajectoryChart, VpcChart } from "./StudyCharts";
 import { SyntheticStudyBuilder } from "./SyntheticStudyBuilder";
-import { generateInitialSyntheticCohort } from "../lib/synthetic-study";
+import type { SyntheticVersion } from "../lib/synthetic-study";
 
 type WikipediaIntro = { paragraph: string; title: string; url: string };
 
@@ -343,6 +343,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
         study: {
           id: study.id, drug: study.drug, study: study.study, source: study.source,
           route: study.route, dose: study.dose, doseUnit: protocolUnit,
+          doseEvents: study.doseEvents,
           concentrationUnit: study.concentrationUnit, timeUnit: study.timeUnit,
           subjects: study.subjects,
         },
@@ -495,7 +496,8 @@ export function Dashboard() {
   const initialMode = typeof window === "undefined" ? null : /\/synthetic(?:\/|\/index\.html)?$/.test(window.location.pathname) ? "synthetic" : new URLSearchParams(window.location.search).get("mode");
   const [uploadOpen, setUploadOpen] = useState(initialMode === "upload");
   const [syntheticMode, setSyntheticMode] = useState(initialMode === "synthetic");
-  const [syntheticStudy, setSyntheticStudy] = useState<Study | null>(() => initialMode === "synthetic" ? generateInitialSyntheticCohort() : null);
+  const [syntheticStudy, setSyntheticStudy] = useState<Study | null>(null);
+  const [syntheticVersion, setSyntheticVersion] = useState<SyntheticVersion>("v6");
   const [syntheticStale, setSyntheticStale] = useState(false);
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
   const [vpcLogY, setVpcLogY] = useState(false);
@@ -529,6 +531,11 @@ export function Dashboard() {
     </header>
     <div className="workspace">
       <main className="content">
+        {syntheticMode && <section className="empirical-cohort-bar"><div className="cohort-selector"><label>Synthetic prior
+          <select aria-label="Synthetic dataset version" value={syntheticVersion} onChange={e => {
+            setSyntheticVersion(e.target.value as SyntheticVersion); setSyntheticStale(true); setModelResult(null);
+          }}><option value="v1">v1 · Original linear model</option><option value="v6">v6 · General compartment models</option><option value="v7">v7 · Physiological patients</option></select>
+        </label></div></section>}
         {!syntheticMode && <section className="empirical-cohort-bar">
           <CohortSelector studies={studies} selected={selected} onSelect={(study) => {
             setSyntheticMode(false);
@@ -567,6 +574,8 @@ export function Dashboard() {
         </> : <SyntheticResultsPlaceholder />}
         {syntheticMode ? <section className="overview-grid synthetic-overview">
           <SyntheticStudyBuilder
+            key={syntheticVersion}
+            version={syntheticVersion}
             censoringControls={(onEdit) => <>
               <div className="synthetic-protocol-heading"><div className="synthetic-schedule-controls">
                 <label>Censoring <select aria-label="Censoring enabled" value={assayLimit === null ? "false" : "true"} onChange={(e) => {

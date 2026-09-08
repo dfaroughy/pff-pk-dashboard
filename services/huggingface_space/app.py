@@ -49,6 +49,7 @@ os.environ.setdefault("PFF_CACHE_ROOT", "/tmp/pff-inference-cache")
 os.environ.setdefault("PFF_CPU_THREADS", "2")
 
 from services.inference.pff_service import cached_inference, service_status  # noqa: E402
+from services.inference.synthetic_service import synthetic_request  # noqa: E402
 
 PUBLIC_SOLVER = {"method": "heun", "steps": 8}
 
@@ -56,6 +57,14 @@ PUBLIC_SOLVER = {"method": "heun", "steps": 8}
 def health() -> dict:
     """Return only non-sensitive deployment metadata."""
     return service_status()
+
+
+def synthetic(payload: dict) -> dict:
+    """Generate with the bundled, provenance-recorded synthetic_priors package."""
+    try:
+        return synthetic_request(payload)
+    except Exception as error:
+        raise gr.Error(str(error)) from error
 
 
 def inference(payload: dict) -> dict:
@@ -98,6 +107,9 @@ with gr.Blocks(title="PFF-PK inference API") as demo:
     status = gr.JSON(label="Service status")
     check = gr.Button("Check service")
     check.click(health, inputs=None, outputs=status, api_name="health")
+    synthetic_run = gr.Button("Generate synthetic cohort")
+    synthetic_run.click(synthetic, inputs=request, outputs=result, api_name="synthetic",
+                        concurrency_limit=1, concurrency_id="pff-inference")
 
 demo.queue(max_size=32, default_concurrency_limit=1)
 

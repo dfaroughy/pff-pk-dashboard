@@ -12,15 +12,18 @@ frontend and service jobs. The service job additionally installs the locked
 Linux/Python-3.12 CPU Space dependencies and tests an assembled standalone bundle.
 Fork pull requests never receive private scientific source or credentials; the
 service gate runs on trusted branches and again on main before deployment.
-Cross-repository access uses read-only deploy keys:
-`PFF_PK_READ_KEY` and `SYNTHETIC_PRIORS_READ_KEY`. These were configured for the
-dashboard, and the prior key for model CI. No write-capable personal token is used.
 
-Integration CI checks the current scientific main branches and logs their SHAs.
-Model CI additionally checks the frozen reference prior commit. Publish
-compatible scientific changes **before** the dashboard change that consumes
-them. The first release of this cleanup requires the new
-`pff_pk.metrics.mesh_vpc` API; deploying only the dashboard must fail its gate.
+Dashboard integration CI now checks the immutable deployed Space revision in
+`services/huggingface_space/release.json`, verifying its source manifest hashes.
+This decouples webpage releases from uncommitted or unrelated scientific-repo
+work. Update the pin after publishing a tested service bundle. The Linux CPU
+runtime gate remains mandatory; it rebuilds the dashboard adapter against those
+exact scientific sources. Private-repository deploy keys are no longer needed
+by the dashboard workflow.
+
+Publish a compatible service bundle before the webpage that consumes it, then
+verify the hosted `/health`, `/synthetic`, and `/inference` endpoints. Model CI
+in the separate scientific repository remains independent of this deployment.
 
 ## Space bundle
 

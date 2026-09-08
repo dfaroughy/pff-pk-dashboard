@@ -1,162 +1,127 @@
 import type { Study } from "./types";
-import { observedVpc } from "./pk";
-import {
-  Rng,
-  acquireMesh,
-  generateStudy,
-  sampleAcquisitionTimes,
-  sampleCohort,
-  sampleGraph,
-  sampleKinetics,
-  sampleProtocol,
-  type GraphDraw,
-  type KineticDraw,
-  type AcquisitionFamily,
-  type ProtocolDraw,
-  type ScheduleShape,
-} from "@pff-pk/synthetic-prior";
 
-export const SYNTHETIC_LIMITS = {
-  observations: { min: 2, max: 20, default: 8 },
-  individuals: { min: 2, max: 16, default: 10 },
-} as const;
-
+export type SyntheticVersion = "v1" | "v6" | "v7";
 export const SYNTHETIC_INITIAL_SEED = 46;
-export const SYNTHETIC_INITIAL_ACQUISITION: SyntheticAcquisition = {
-  family: "exact",
-  shape: "early",
+export const SYNTHETIC_LIMITS = {
+  individuals: { min: 2, max: 16, default: 10 },
+  observations: { min: 2, max: 20, default: 8 },
 };
-
-export type SyntheticModelDraw = {
-  seed: number;
-  graph: GraphDraw;
-  kinetics: KineticDraw;
-  protocol: ProtocolDraw;
+export type DoseEvent = {
+  time: number;
+  amount: number;
+  duration: number;
+  route: "oral" | "iv";
 };
-
-export type SyntheticAcquisition = {
-  family: AcquisitionFamily;
-  shape: ScheduleShape;
+export type GraphDraw = {
+  route: "oral" | "iv";
+  nodes: { id: number; role: string; label: string }[];
+  edges: { id: string; src: number; dst: number }[];
+  central: number;
+  elimNodes: number[];
+  doseMap: Record<number, number>;
 };
-
-function boundedInteger(value: number, low: number, high: number) {
-  return Math.max(low, Math.min(high, Math.round(value)));
-}
-
-function acquisitionSeed(modelSeed: number, observations: number, acquisition: SyntheticAcquisition, gridDraw: number) {
-  const familyCode = { exact: 0x101, pseudo_scheduled: 0x202, unscheduled: 0x303 }[acquisition.family];
-  const shapeCode = { uniform: 0x11, early: 0x22, late: 0x33, clustered: 0x44 }[acquisition.shape];
-  return (modelSeed ^ (observations * 0x45d9f3b) ^ Math.imul(gridDraw + 1, 0x27d4eb2d) ^ familyCode ^ shapeCode) >>> 0;
-}
-
-export function sampleSyntheticModel(seed: number): SyntheticModelDraw {
-  const rng = new Rng(seed);
-  const graph = sampleGraph(rng);
-  return {
-    seed,
-    graph,
-    kinetics: sampleKinetics(graph, rng),
-    protocol: sampleProtocol(graph, rng),
+export type PriorControl = {
+  path: string;
+  label: string;
+  min: number;
+  max: number;
+  default: number | number[];
+  integer: boolean;
+};
+export type ProfileDescription = {
+  version: SyntheticVersion;
+  profileSha256: string;
+  configuration: Record<string, unknown>;
+  controls: PriorControl[];
+};
+export type Flux = {
+  src: number;
+  dst?: number;
+  node?: number;
+  kappa?: number;
+  beta?: number | null;
+  hill?: number;
+  mod_node?: number | null;
+  mod_type?: string;
+  mod_k?: number;
+  gate_lag?: number | null;
+  gate_width?: number;
+};
+export type SyntheticResponse = {
+  study: Study;
+  description: ProfileDescription;
+  provenance: {
+    name: SyntheticVersion;
+    seed: number;
+    sha256: string;
+    modified: boolean;
+    recordSha256: string;
+    implementation_sha256: string;
+    resolved: { configuration: Record<string, unknown> };
   };
-}
-
-export function withInitialDose(model: SyntheticModelDraw): SyntheticModelDraw {
-  return {
-    ...model,
-    protocol: {
-      ...model.protocol,
-      events: [{ time: 0, amount: 1, duration: 0, route: model.graph.route }],
-      multidose: false,
-      infusion: false,
-      pattern: "single",
-      rawProtocolHorizon: 1,
-    },
+  topology: {
+    roles: Record<string, string>;
+    edges: Flux[];
+    elimination: Flux[];
+    dose_map: Record<number, number>;
   };
-}
+  population: Record<string, unknown>;
+  individualTruth: Record<string, Record<string, unknown>>;
+  native: null | {
+    population: Record<string, number[][]>;
+    time_start: number;
+    time_stop: number;
+    [key: string]: unknown;
+  };
+  covariateModel: Record<string, unknown> | null;
+  integration: Record<string, unknown>;
+};
 
-export function generateInitialSyntheticCohort(): Study {
-  return generateSyntheticCohort(
-    withInitialDose(sampleSyntheticModel(SYNTHETIC_INITIAL_SEED)),
-    SYNTHETIC_LIMITS.individuals.default,
-    SYNTHETIC_LIMITS.observations.default,
-    SYNTHETIC_INITIAL_ACQUISITION,
-  );
-}
-
-export function generateSyntheticCohort(
-  model: SyntheticModelDraw,
-  nIndividuals: number,
-  nObservations: number,
-  acquisition: SyntheticAcquisition = { family: "exact", shape: "uniform" },
-  gridDraw = 0,
-): Study {
-  const individuals = boundedInteger(
-    nIndividuals,
-    SYNTHETIC_LIMITS.individuals.min,
-    SYNTHETIC_LIMITS.individuals.max,
-  );
-  const observations = boundedInteger(
-    nObservations,
-    SYNTHETIC_LIMITS.observations.min,
-    SYNTHETIC_LIMITS.observations.max,
-  );
-  const rng = new Rng((model.seed ^ 0x9e3779b9) >>> 0);
-  const cohort = sampleCohort(model.graph, model.kinetics, rng, individuals);
-  const complete = generateStudy(model.graph, model.kinetics, model.protocol, cohort, rng);
-  const referenceArm = complete.arms[0];
-  const meshRng = new Rng(acquisitionSeed(model.seed, observations, acquisition, gridDraw));
-  const mesh = acquireMesh(complete, 0, acquisition.family, acquisition.shape, observations, meshRng);
-  const doseUnit = "relative dose";
-  const subjects: Study["subjects"] = mesh.times.map((times, person) => ({
-    id: `individual-${person + 1}`,
-    points: times.map((time, index) => [time, mesh.values[person][index]]),
+export function graphFromResponse(draw: SyntheticResponse): GraphDraw {
+  const nodes = Object.entries(draw.topology.roles).map(([id, role]) => ({
+    id: Number(id),
+    role,
+    label: role,
   }));
-
   return {
-    id: `synthetic-v6-${model.seed}-${individuals}-${observations}-${acquisition.family}-${acquisition.shape}-${gridDraw}`,
-    origin: "Synthetic v6",
-    drug: "Synthetic cohort",
-    administeredDrug: "dimensionless reference compound",
-    study: `Interactive v6 prior draw ${model.seed}`,
-    source: `Pythia-PK synthetic v6 prior · ${acquisition.family}/${acquisition.shape}`,
-    route: model.graph.route,
-    dose: referenceArm.events[0]?.amount ?? 1,
-    doseUnit,
-    doseEvents: referenceArm.events.map((event) => ({
-      time: event.time,
-      amount: event.amount,
-      unit: doseUnit,
-      route: event.route,
-      ...(event.duration > 0 ? { duration: event.duration } : {}),
+    route: draw.study.route as "oral" | "iv",
+    nodes,
+    central: nodes.find((n) => n.role === "central")!.id,
+    edges: draw.topology.edges.map((e, i) => ({
+      id: String(i),
+      src: e.src,
+      dst: e.dst!,
     })),
-    concentrationUnit: "dimensionless concentration",
-    timeUnit: "τ",
-    medium: "central compartment",
-    unitClass: "dimensionless",
-    subjects,
-    summary: [],
-    observedVpc: observedVpc({ subjects }),
+    elimNodes: draw.topology.elimination.map((e) => e.node!),
+    doseMap: draw.topology.dose_map,
   };
 }
 
-export function previewSyntheticObservationTimes(
-  modelSeed: number,
-  nIndividuals: number,
-  nObservations: number,
-  acquisition: SyntheticAcquisition,
-  gridDraw = 0,
+/** Exact algebra of simulation/fluxes.py, including gates and state modulation.
+ * r includes the individual multiplier and exp(time path); X is amount, not concentration.
+ */
+export function fluxEquation(
+  edge: Flux,
+  version: SyntheticVersion,
+  central: number,
 ) {
-  const individuals = boundedInteger(nIndividuals, 1, SYNTHETIC_LIMITS.individuals.max);
-  const observations = boundedInteger(
-    nObservations,
-    SYNTHETIC_LIMITS.observations.min,
-    SYNTHETIC_LIMITS.observations.max,
-  );
-  return sampleAcquisitionTimes(
-    acquisition.family,
-    acquisition.shape,
-    observations,
-    individuals,
-    new Rng(acquisitionSeed(modelSeed, observations, acquisition, gridDraw)),
-  );
+  const symbol = (id: number) => String.fromCharCode(97 + id);
+  const src = edge.node ?? edge.src;
+  const dst = edge.node === undefined ? symbol(edge.dst!) : "\\emptyset";
+  const label = `${symbol(src)}${dst}`;
+  if (version === "v1")
+    return `J_{${label},i}=T\\,k_{${label},i}(T\\tau)X_{${symbol(src)},i}`;
+  const amount = `X_{${symbol(src)},i}`;
+  let value =
+    edge.beta == null
+      ? amount
+      : `\\frac{\\beta_{${label}}${amount}^{h_{${label}}}}{\\beta_{${label}}^{h_{${label}}}+${amount}^{h_{${label}}}}`;
+  if (edge.gate_lag != null)
+    value += `\\frac{1}{1+\\exp[-(\\tau-${edge.gate_lag.toPrecision(4)})/${edge.gate_width?.toPrecision(4)}]}`;
+  if (edge.mod_node != null) {
+    const x = `X_{${symbol(edge.mod_node)},i}`;
+    value += `\\frac{${edge.mod_type === "inhibition" ? `K_{${label}}` : x}}{K_{${label}}+${x}}`;
+  }
+  void central;
+  return `J_{${label},i}=\\kappa_{${label}}r_{${label},i}(\\tau)${value}`;
 }

@@ -1,500 +1,938 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
-import katex from "katex";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Study } from "../lib/types";
+import { syntheticRequest } from "../lib/model-api";
 import {
-  SYNTHETIC_INITIAL_ACQUISITION,
+  fluxEquation,
+  graphFromResponse,
   SYNTHETIC_INITIAL_SEED,
-  SYNTHETIC_LIMITS,
-  generateSyntheticCohort,
-  previewSyntheticObservationTimes,
-  sampleSyntheticModel,
-  type SyntheticAcquisition,
-  type SyntheticModelDraw,
+  type ProfileDescription,
+  type SyntheticResponse,
+  type SyntheticVersion,
 } from "../lib/synthetic-study";
-import type { DoseEvent, GraphDraw, RateDraw } from "@pff-pk/synthetic-prior";
+import {
+  balanceEquation,
+  CollapsibleSection,
+  CompartmentGraph,
+  DoseTimeline,
+  Latex,
+} from "./SyntheticModelView";
 
-function initialDose(route: GraphDraw["route"]): DoseEvent {
-  return { time: 0, amount: 1, duration: 0, route };
+function ValueTable({ value }: { value: Record<string, unknown> }) {
+  return (
+    <div className="synthetic-table-wrap">
+      <table className="synthetic-parameter-table">
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(value).map(([key, v]) => (
+            <tr key={key}>
+              <th>{key.replaceAll("_", " ")}</th>
+              <td className="prior-value">
+                {typeof v === "object" && v !== null ? (
+                  <details>
+                    <summary>
+                      {Array.isArray(v) ? `${v.length} values` : "Details"}
+                    </summary>
+                    <pre>{JSON.stringify(v, null, 2)}</pre>
+                  </details>
+                ) : (
+                  String(v ?? "—")
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
-function Latex({ tex, block = false }: { tex: string; block?: boolean }) {
-  return <span
-    className={block ? "synthetic-latex block" : "synthetic-latex"}
-    dangerouslySetInnerHTML={{
-      __html: katex.renderToString(tex, { displayMode: block, throwOnError: false, strict: false }),
-    }}
-  />;
-}
-
-function CollapsibleSection({ title, open, onToggle, children }: {
-  title: string;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return <section className={open ? "synthetic-accordion open" : "synthetic-accordion"}>
-    <h3><button type="button" aria-expanded={open} onClick={onToggle}><span>{title}</span><i aria-hidden="true">{open ? "−" : "+"}</i></button></h3>
-    {open && <div className="synthetic-accordion-content">{children}</div>}
-  </section>;
-}
-
-function compartmentSymbol(id: number) {
-  return String.fromCharCode(97 + id);
-}
-
-export function nodePosition(graph: GraphDraw, id: number) {
-  const node = graph.nodes.find((candidate) => candidate.id === id);
-  if (!node) return { x: 50, y: 50 };
-  const peers = graph.nodes.filter((candidate) => candidate.role === node.role);
-  const index = peers.findIndex((candidate) => candidate.id === id);
-  const chainLength = Math.max(1, graph.nodes.filter((n) => ["transit", "gut"].includes(n.role)).length, graph.nodes.filter((n) => ["depot_transit", "depot"].includes(n.role)).length);
-  const centralX = 20 + chainLength * 26;
-  if (node.role === "central") return { x: centralX, y: 52 };
-  if (node.role === "peripheral") {
-    return { x: centralX + 36, y: 30 + index * 30 };
-  }
-  if (node.role === "bile") return { x: centralX, y: 16 };
-  const oral = graph.nodes.filter((candidate) => ["transit", "gut"].includes(candidate.role));
-  if (["transit", "gut"].includes(node.role)) {
-    const oralIndex = oral.findIndex((candidate) => candidate.id === id);
-    return { x: 20 + 26 * oralIndex, y: 35 };
-  }
-  const depot = graph.nodes.filter((candidate) => ["depot_transit", "depot"].includes(candidate.role));
-  const depotIndex = depot.findIndex((candidate) => candidate.id === id);
-  return { x: 20 + 26 * depotIndex, y: 80 };
-}
-
-function CompartmentGraph({ graph }: { graph: GraphDraw }) {
-  const [zoom, setZoom] = useState(1);
-  const positions = graph.nodes.map((node) => nodePosition(graph, node.id));
-  const width = Math.max(...positions.map((p) => p.x)) + 40;
-  const height = Math.max(105, ...positions.map((p) => p.y + 30));
-  const reversePairs = new Set(graph.edges
-    .filter((edge) => graph.edges.some((candidate) => candidate.src === edge.dst && candidate.dst === edge.src))
-    .map((edge) => `${Math.min(edge.src, edge.dst)}-${Math.max(edge.src, edge.dst)}`));
-  return <><div className="graph-zoom"><button type="button" aria-label="Zoom out compartment graph" disabled={zoom <= 0.75} onClick={() => setZoom((z) => Math.max(.75, z - .25))}>−</button><button type="button" onClick={() => setZoom(1)}>Reset zoom</button><button type="button" aria-label="Zoom in compartment graph" disabled={zoom >= 3} onClick={() => setZoom((z) => Math.min(3, z + .25))}>+</button></div><div className="synthetic-graph-viewport"><svg className="synthetic-graph" style={{ width: `${width * 4 * zoom}px` }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Sampled compartment model graph">
-    <defs>
-      <marker id="synthetic-arrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" /></marker>
-    </defs>
-    {graph.edges.map((edge) => {
-      const from = nodePosition(graph, edge.src);
-      const to = nodePosition(graph, edge.dst);
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const length = Math.hypot(dx, dy) || 1;
-      const inset = 7;
-      const start = { x: from.x + dx / length * inset, y: from.y + dy / length * inset };
-      const end = { x: to.x - dx / length * inset, y: to.y - dy / length * inset };
-      const paired = reversePairs.has(`${Math.min(edge.src, edge.dst)}-${Math.max(edge.src, edge.dst)}`);
-      const offset = paired ? 2.2 : 0;
-      const ox = -dy / length * offset;
-      const oy = dx / length * offset;
-      return <g key={edge.id}>
-        <line className="synthetic-edge" x1={start.x + ox} y1={start.y + oy} x2={end.x + ox} y2={end.y + oy} markerEnd="url(#synthetic-arrow)" />
-        <text className="synthetic-flux-label" x={(start.x + end.x) / 2 + ox} y={(start.y + end.y) / 2 + oy - 1.2}>J{compartmentSymbol(edge.src)}{compartmentSymbol(edge.dst)}</text>
-      </g>;
-    })}
-    {graph.elimNodes.map((id, index) => {
-      const from = nodePosition(graph, id);
-      const to = { x: width - 12, y: height - 12 - index * 8 };
-      return <g key={`elim-${id}`}>
-        <line className="synthetic-edge elimination" x1={from.x + 4} y1={from.y + 4} x2={to.x} y2={to.y} markerEnd="url(#synthetic-arrow)" />
-        <text className="synthetic-flux-label" x={(from.x + to.x) / 2} y={(from.y + to.y) / 2}>J{compartmentSymbol(id)}∅</text>
-      </g>;
-    })}
-    {graph.nodes.map((node) => {
-      const position = nodePosition(graph, node.id);
-      const label = compartmentSymbol(node.id);
-      return <g key={node.id} transform={`translate(${position.x} ${position.y})`}>
-        <circle className={node.id === graph.central ? "synthetic-node central" : "synthetic-node"} r="6" />
-        <text className={node.id === graph.central ? "synthetic-node-index central" : "synthetic-node-index"} y="1.6">{label}</text>
-        <text className="synthetic-node-role" y="10">{node.role.replace("_", " ")}</text>
-      </g>;
-    })}
-    {Object.entries(graph.doseMap).map(([id, fraction], index) => {
-      const position = nodePosition(graph, Number(id));
-      return <g key={`dose-${id}`}>
-        <line className="synthetic-dose-arrow" x1={position.x} y1={Math.max(1, position.y - 18 - index * 3)} x2={position.x} y2={position.y - 7} markerEnd="url(#synthetic-arrow)" />
-        <text className="synthetic-dose-label" x={position.x} y={Math.max(3, position.y - 20 - index * 3)}>{Math.round(fraction * 100)}% dose</text>
-      </g>;
-    })}
-  </svg></div></>;
-}
-
-export function balanceEquation(graph: GraphDraw, nodeId: number) {
-  const symbol = compartmentSymbol(nodeId);
-  const incoming = graph.edges.filter((edge) => edge.dst === nodeId).map((edge) => `J_{${compartmentSymbol(edge.src)}${symbol}}`);
-  const outgoing = graph.edges.filter((edge) => edge.src === nodeId).map((edge) => `J_{${symbol}${compartmentSymbol(edge.dst)}}`);
-  if (graph.elimNodes.includes(nodeId)) outgoing.push(`J_{${symbol}\\emptyset}`);
-  const terms = [
-    ...incoming.map((term) => ({ sign: 1, term })),
-    ...outgoing.map((term) => ({ sign: -1, term })),
-    ...(Object.hasOwn(graph.doseMap, nodeId) ? [{ sign: 1, term: `u_${symbol}(\\tau)` }] : []),
-  ];
-  const expression = terms.map(({ sign, term }, index) => `${sign < 0 ? "-" : index > 0 ? "+" : ""}${term}`).join("");
-  return `\\frac{\\mathrm d X_${symbol}}{\\mathrm d\\tau}=${expression || "0"}`;
-}
-
-function equationForRate(rate: RateDraw) {
-  const src = compartmentSymbol(rate.src);
-  const dst = rate.dst === null ? "\\emptyset" : compartmentSymbol(rate.dst);
-  const label = `${src}${dst}`;
-  if (rate.beta !== null) {
-    return `J_{${label}}=\\kappa_{${label}}\\,r_{${label}}(\\tau)\\,\\frac{\\beta_{${label}}X_${src}^{h_{${label}}}}{\\beta_{${label}}^{h_{${label}}}+X_${src}^{h_{${label}}}}`;
-  }
-  return `J_{${label}}=\\kappa_{${label}}\\,r_{${label}}(\\tau)\\,X_${src}`;
-}
-
-function connectionType(graph: GraphDraw, rate: RateDraw) {
-  const source = graph.nodes.find((node) => node.id === rate.src)?.role.replace("_", " ") ?? "compartment";
-  const target = rate.dst === null
-    ? "elimination"
-    : graph.nodes.find((node) => node.id === rate.dst)?.role.replace("_", " ") ?? "compartment";
-  return `${source} → ${target}`;
-}
-
-function ParameterInput({ label, value, min, max, disabled = false, onCommit }: {
+function NumericEdit({
+  id,
+  label,
+  value,
+  min,
+  max,
+  disabled,
+  onCommit,
+}: {
+  id?: string;
   label: string;
-  value: number | null;
+  value: number;
   min: number;
-  max?: number;
-  disabled?: boolean;
+  max: number;
+  disabled: boolean;
   onCommit: (value: number) => void;
 }) {
-  const formatted = value === null ? "" : String(Number(value.toPrecision(5)));
   const [draft, setDraft] = useState<string | null>(null);
-  const displayed = draft ?? formatted;
-  const commit = () => {
-    const parsed = Number(displayed);
-    if (displayed.trim() && Number.isFinite(parsed) && parsed >= min) onCommit(parsed);
-    setDraft(null);
-  };
-  return <input
-    aria-label={label}
-    type="number"
-    min={min}
-    max={max}
-    step="any"
-    disabled={disabled}
-    value={displayed}
-    onFocus={() => setDraft(formatted)}
-    onChange={(event) => setDraft(event.target.value)}
-    onBlur={commit}
-    onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
-  />;
+  return (
+    <input
+      id={id}
+      aria-label={label}
+      type="number"
+      step="any"
+      min={min}
+      max={max}
+      disabled={disabled}
+      value={draft ?? value}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (
+          draft !== null &&
+          draft.trim() &&
+          Number.isFinite(Number(draft)) &&
+          Number(draft) >= min &&
+          Number(draft) <= max
+        )
+          onCommit(Number(draft));
+        setDraft(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+    />
+  );
 }
 
-function KineticTable({ graph, rates, onChange }: {
-  graph: GraphDraw;
-  rates: RateDraw[];
-  onChange: (id: string, patch: Partial<RateDraw>) => void;
+function LinearPopulation({
+  population,
+}: {
+  population: Record<string, number[][]>;
 }) {
-  return <div className="synthetic-table-wrap"><table className="synthetic-parameter-table">
-    <thead><tr><th>Flux</th><th>Type</th><th>Law</th><th>κ</th><th>β</th><th>h</th><th>Variation</th></tr></thead>
-    <tbody>{rates.map((rate) => {
-      const dst = rate.dst === null ? "∅" : compartmentSymbol(rate.dst);
-      const flux = `J${compartmentSymbol(rate.src)}${dst}`;
-      return <tr key={rate.id}>
-        <td>J<sub>{compartmentSymbol(rate.src)}{dst}</sub></td>
-        <td className="connection-type">{connectionType(graph, rate)}</td>
-        <td><select aria-label={`${flux} law`} value={rate.beta === null ? "linear" : "saturable"} onChange={(event) => onChange(rate.id, event.target.value === "linear" ? { beta: null } : { beta: rate.beta ?? 1, hill: rate.hill || 1 })}>
-          <option value="linear">Linear</option>
-          <option value="saturable">Saturable</option>
-        </select></td>
-        <td><ParameterInput label={`${flux} kappa`} value={rate.kappa} min={0.0001} onCommit={(value) => onChange(rate.id, { kappa: value })} /></td>
-        <td><ParameterInput label={`${flux} beta`} value={rate.beta} min={0.0001} disabled={rate.beta === null} onCommit={(value) => onChange(rate.id, { beta: value })} /></td>
-        <td><ParameterInput label={`${flux} Hill exponent`} value={rate.beta === null ? null : rate.hill} min={0.1} disabled={rate.beta === null} onCommit={(value) => onChange(rate.id, { hill: value })} /></td>
-        <td>{rate.timeVarying ? `ν=${rate.nu}; ℓ=${rate.ell?.toFixed(2)}` : "constant"}</td>
-      </tr>;
-    })}</tbody>
-  </table></div>;
+  const meanings: Record<string, string> = {
+    k_a: "Absorption rate",
+    k_e: "Elimination rate",
+    V: "Central volume",
+    k_1p: "Central → peripheral rate",
+    k_p1: "Peripheral → central rate",
+  };
+  return (
+    <>
+      <p>
+        Log means and standard deviations define between-person lognormal
+        parameters. Temporal magnitude and scale define the archived OU paths
+        (absorption, elimination, volume) or sinusoidal variation (peripheral
+        exchange).
+      </p>
+      <div className="synthetic-table-wrap">
+        <table className="synthetic-parameter-table">
+          <thead>
+            <tr>
+              <th>Parameter</th>
+              <th>Meaning</th>
+              <th>Log mean</th>
+              <th>Log SD</th>
+              <th>Temporal magnitude</th>
+              <th>Temporal scale</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(population).flatMap(([name, rows]) =>
+              rows.map((row, i) => (
+                <tr key={`${name}-${i}`}>
+                  <th>
+                    {name}
+                    {rows.length > 1 ? ` [${i + 1}]` : ""}
+                  </th>
+                  <td>{meanings[name] ?? name}</td>
+                  {row.map((v, j) => (
+                    <td key={j}>{v.toPrecision(4)}</td>
+                  ))}
+                </tr>
+              )),
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
 }
 
-function DoseTimeline({ events, observationTimes }: { events: DoseEvent[]; observationTimes: number[][] }) {
-  const left = 40;
-  const right = 570;
-  const axisY = 55;
-  const x = (time: number) => left + Math.max(0, Math.min(1, time)) * (right - left);
-  return <svg className="synthetic-dose-timeline" viewBox="0 0 610 125" role="img" aria-label="Dimensionless dose and observation schedule timeline">
-    <defs>
-      <marker id="timeline-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" /></marker>
-    </defs>
-    <line className="timeline-axis" x1={left} y1={axisY} x2={right} y2={axisY} />
-    {[0, 0.25, 0.5, 0.75, 1].map((time) => <g key={time}>
-      <line className="timeline-tick" x1={x(time)} y1={axisY - 4} x2={x(time)} y2={axisY + 5} />
-      <text className="timeline-label" x={x(time)} y={105}>{time.toFixed(2)}</text>
-    </g>)}
-    <text className="timeline-observation-title" x={left} y={71}>observations</text>
-    {observationTimes.map((times, person) => <g key={`person-${person}`}>
-      {times.map((time, index) => <circle className="timeline-observation" key={`${time}-${index}`} cx={x(time)} cy={73 + person * 2.8} r="1.15" />)}
-    </g>)}
-    <text className="timeline-axis-title" x={right} y={120}>dimensionless time τ</text>
-    {events.map((event, index) => {
-      const start = x(event.time);
-      if (event.duration > 0) {
-        const width = Math.max(5, x(event.time + event.duration) - start);
-        return <g key={`${event.time}-${index}`}>
-          <rect className="timeline-infusion" x={start} y={24} width={width} height={axisY - 24} />
-          <text className="timeline-event-label" x={start + width / 2} y={18}>{event.amount.toFixed(2)}×</text>
-        </g>;
-      }
-      return <g key={`${event.time}-${index}`}>
-        <line className="timeline-bolus" x1={start} y1={22} x2={start} y2={axisY - 7} markerEnd="url(#timeline-arrow)" />
-        <text className="timeline-event-label" x={start} y={15}>{event.amount.toFixed(2)}×</text>
-      </g>;
-    })}
-  </svg>;
-}
-
-export function SyntheticStudyBuilder({ onGenerate, onInvalidate, censoringControls }: {
+export function SyntheticStudyBuilder({
+  version = "v6",
+  onGenerate,
+  onInvalidate,
+  censoringControls,
+}: {
+  version?: SyntheticVersion;
   onGenerate: (study: Study, newDrawSeed?: number) => void;
   onInvalidate: () => void;
   censoringControls?: (onEdit: () => void) => ReactNode;
 }) {
-  const [model, setModel] = useState<SyntheticModelDraw>(() => sampleSyntheticModel(SYNTHETIC_INITIAL_SEED));
-  const [generationSeed, setGenerationSeed] = useState(SYNTHETIC_INITIAL_SEED);
-  const [manualSeed, setManualSeed] = useState(false);
-  const [manualCensoring, setManualCensoring] = useState(false);
-  const editedLatentModel = useRef(false);
-  const [doseEvents, setDoseEvents] = useState<DoseEvent[]>(() => [initialDose(model.graph.route)]);
-  const [acquisition, setAcquisition] = useState<SyntheticAcquisition>(SYNTHETIC_INITIAL_ACQUISITION);
-  const [gridDraw, setGridDraw] = useState(0);
-  const [openSections, setOpenSections] = useState({ graph: true, kinetics: false, protocol: false, censoring: false });
-  const [individuals, setIndividuals] = useState<number>(SYNTHETIC_LIMITS.individuals.default);
-  const [observations, setObservations] = useState<number>(SYNTHETIC_LIMITS.observations.default);
-  const activeModel = useMemo(() => ({
-    ...model,
-    protocol: {
-      ...model.protocol,
-      events: doseEvents.map((event) => ({ ...event, route: model.graph.route })),
-      multidose: doseEvents.length > 1,
-      infusion: doseEvents.some((event) => event.duration > 0),
-      pattern: doseEvents.length > 1 ? "maintenance" as const : "single" as const,
-      rawProtocolHorizon: 1,
-    },
-  }), [doseEvents, model]);
-  const observationPreview = useMemo(() => previewSyntheticObservationTimes(
-    model.seed,
-    Math.min(individuals, 8),
-    observations,
-    acquisition,
-    gridDraw,
-  ), [acquisition, gridDraw, individuals, model.seed, observations]);
-  const equations = useMemo(() => model.graph.nodes.map((node) => balanceEquation(model.graph, node.id)), [model.graph]);
+  const [description, setDescription] = useState<ProfileDescription | null>(
+    null,
+  );
+  const [draw, setDraw] = useState<SyntheticResponse | null>(null);
+  const [seed, setSeed] = useState(SYNTHETIC_INITIAL_SEED);
+  const [individuals, setIndividuals] = useState(10);
+  const [observations, setObservations] = useState(8);
+  const [schedule, setSchedule] = useState("exact");
+  const [shape, setShape] = useState("early");
+  const [gridSeed, setGridSeed] = useState(0);
+  const [overrides, setOverrides] = useState<Record<string, number | number[]>>(
+    {},
+  );
+  const [kineticEdits, setKineticEdits] = useState<
+    Record<string, { kappa?: number; beta?: number | null; hill?: number }>
+  >({});
+  const [doseEdits, setDoseEdits] = useState<Array<{
+    time: number;
+    amount: number;
+    duration: number;
+  }> | null>(null);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState("");
+  const [censorEdited, setCensorEdited] = useState(false);
+  const fixedSeed = useRef(false);
+  const edited = useRef(false);
+  const controller = useRef<AbortController | null>(null);
+  const callbacks = useRef({ onGenerate, onInvalidate });
+  useEffect(() => {
+    callbacks.current = { onGenerate, onInvalidate };
+  });
 
-  const randomSeed = () => {
-    const upper = 2 ** 31 - 1;
-    const draw = Math.floor(Math.random() * upper);
-    return draw === generationSeed ? (draw + 1) % upper : draw;
+  useEffect(() => {
+    const abort = new AbortController();
+    controller.current = abort;
+    const initialize = async () => {
+      try {
+        const profile = await syntheticRequest<ProfileDescription>(
+          { action: "describe", version },
+          abort.signal,
+        );
+        if (abort.signal.aborted) return;
+        setDescription(profile);
+        const result = await syntheticRequest<SyntheticResponse>(
+          {
+            version,
+            seed: SYNTHETIC_INITIAL_SEED,
+            individuals: 10,
+            observations: 8,
+            schedule: "exact",
+            shape: "early",
+          },
+          abort.signal,
+        );
+        if (abort.signal.aborted) return;
+        setDraw(result);
+        callbacks.current.onGenerate(result.study, result.provenance.seed);
+      } catch (e) {
+        if (!abort.signal.aborted)
+          setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!abort.signal.aborted) setBusy(false);
+      }
+    };
+    void initialize();
+    return () => {
+      abort.abort();
+      controller.current?.abort();
+    };
+  }, [version]);
+
+  const invalidate = () => {
+    edited.current = true;
+    onInvalidate();
   };
-  const drawModel = () => {
-    setManualCensoring(false);
-    const nextSeed = randomSeed();
-    const nextModel = sampleSyntheticModel(nextSeed);
-    const nextEvents = doseEvents.map((event) => ({ ...event, route: nextModel.graph.route }));
-    setGenerationSeed(nextSeed);
-    setManualSeed(false);
-    editedLatentModel.current = true;
-    setModel(nextModel);
-    setDoseEvents(nextEvents);
-    setGridDraw(0);
-    onGenerate(generateSyntheticCohort({
-      ...nextModel,
-      protocol: {
-        ...nextModel.protocol,
-        events: nextEvents,
-        multidose: nextEvents.length > 1,
-        infusion: nextEvents.some((event) => event.duration > 0),
-        pattern: nextEvents.length > 1 ? "maintenance" : "single",
-        rawProtocolHorizon: 1,
-      },
-    }, individuals, observations, acquisition, 0), nextSeed);
-  };
-  const generate = () => {
-    let nextModel = activeModel;
-    if (!editedLatentModel.current && !manualCensoring) {
-      const nextSeed = manualSeed ? generationSeed : randomSeed();
-      const sampled = sampleSyntheticModel(nextSeed);
-      const nextEvents = doseEvents.map((event) => ({ ...event, route: sampled.graph.route }));
-      nextModel = {
-        ...sampled,
-        protocol: {
-          ...sampled.protocol,
-          events: nextEvents,
-          multidose: nextEvents.length > 1,
-          infusion: nextEvents.some((event) => event.duration > 0),
-          pattern: nextEvents.length > 1 ? "maintenance" : "single",
-          rawProtocolHorizon: 1,
+  const run = async (reset = false, fresh = false) => {
+    if (busy) return;
+    const preserve =
+      !reset && !fresh && (fixedSeed.current || edited.current || censorEdited);
+    const nextSeed = preserve
+      ? seed
+      : crypto.getRandomValues(new Uint32Array(1))[0] % 2 ** 31;
+    const nextOverrides = reset ? {} : overrides;
+    const nextKinetics = preserve ? kineticEdits : {};
+    const nextDoses = reset ? null : doseEdits;
+    controller.current?.abort();
+    const abort = new AbortController();
+    controller.current = abort;
+    setBusy(true);
+    setError("");
+    setSeed(nextSeed);
+    onInvalidate();
+    try {
+      const result = await syntheticRequest<SyntheticResponse>(
+        {
+          version,
+          seed: nextSeed,
+          individuals,
+          observations,
+          schedule,
+          shape,
+          gridSeed,
+          overrides: nextOverrides,
+          ...(Object.keys(nextKinetics).length
+            ? { kineticEdits: nextKinetics }
+            : {}),
+          ...(nextDoses ? { doseEvents: nextDoses } : {}),
         },
-      };
-      setGenerationSeed(nextSeed);
-      setModel(sampled);
-      setDoseEvents(nextEvents);
-      setGridDraw(0);
+        abort.signal,
+      );
+      if (abort.signal.aborted) return;
+      setDraw(result);
+      setOverrides(nextOverrides);
+      setKineticEdits(nextKinetics);
+      setDoseEdits(nextDoses);
+      callbacks.current.onGenerate(
+        result.study,
+        (edited.current || censorEdited) && !reset ? undefined : nextSeed,
+      );
+      setCensorEdited(false);
+      fixedSeed.current = false;
+      edited.current = false;
+    } catch (e) {
+      if (!abort.signal.aborted)
+        setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (!abort.signal.aborted) setBusy(false);
     }
-    setManualSeed(false);
-    const preserveCurrentGrid = editedLatentModel.current || manualCensoring;
-    setManualCensoring(false);
-    editedLatentModel.current = false;
-    onGenerate(generateSyntheticCohort(nextModel, individuals, observations, acquisition, preserveCurrentGrid ? gridDraw : 0), preserveCurrentGrid ? undefined : nextModel.seed);
   };
-  const changeRate = (id: string, patch: Partial<RateDraw>) => {
-    const rates = model.kinetics.rates.map((rate) => rate.id === id ? { ...rate, ...patch } : rate);
-    const nextModel = {
-      ...model,
-      kinetics: {
-        ...model.kinetics,
-        rates,
-        saturableCount: rates.filter((rate) => rate.beta !== null).length,
-      },
-    };
-    const nextActiveModel = {
-      ...nextModel,
-      protocol: activeModel.protocol,
-    };
-    setModel(nextModel);
-    setManualSeed(false);
-    setGenerationSeed(nextModel.seed);
-    editedLatentModel.current = true;
-    onGenerate(generateSyntheticCohort(nextActiveModel, individuals, observations, acquisition, gridDraw));
-  };
-  const changeAcquisition = (patch: Partial<SyntheticAcquisition>) => {
-    setAcquisition((current) => ({ ...current, ...patch }));
-    setGridDraw(0);
-    onInvalidate();
-  };
-  const changeDose = (index: number, field: "time" | "amount" | "duration", value: number) => {
-    editedLatentModel.current = true;
-    setDoseEvents((current) => current.map((event, eventIndex) => {
-      if (eventIndex !== index) return event;
-      if (field === "amount") return { ...event, amount: Math.max(0.001, value) };
-      if (field === "duration") return { ...event, duration: Math.max(0, Math.min(1 - event.time, value)) };
-      const time = index === 0 ? 0 : Math.max(0, Math.min(1, value));
-      return { ...event, time, duration: Math.min(event.duration, 1 - time) };
+  const section = (key: string, title: string, children: ReactNode) => (
+    <CollapsibleSection
+      title={title}
+      open={!!open[key]}
+      onToggle={() => setOpen((v) => ({ ...v, [key]: !v[key] }))}
+    >
+      {children}
+    </CollapsibleSection>
+  );
+  const controls = (prefix: string[]) => (
+    <div className="synthetic-prior-controls">
+      {description?.controls
+        .filter((c) => prefix.some((p) => c.path.startsWith(`${p}.`)))
+        .map((c) => {
+          const value = overrides[c.path] ?? c.default;
+          return (
+            <label key={c.path}>
+              {c.label}
+              <div className="prior-range-inputs">
+                {(Array.isArray(value) ? value : [value]).map((v, i) => (
+                  <input
+                    key={i}
+                    aria-label={`${c.label}${Array.isArray(value) ? (i === 0 ? " minimum" : " maximum") : ""}`}
+                    type="number"
+                    min={c.min}
+                    max={c.max}
+                    step={c.integer ? 1 : "any"}
+                    disabled={busy}
+                    value={v}
+                    onChange={(e) => {
+                      const number = Number(e.target.value);
+                      if (!Number.isFinite(number)) return;
+                      setOverrides((current) => ({
+                        ...current,
+                        [c.path]: Array.isArray(value)
+                          ? value.map((x, j) => (i === j ? number : x))
+                          : number,
+                      }));
+                      setKineticEdits({});
+                      invalidate();
+                    }}
+                  />
+                ))}
+              </div>
+            </label>
+          );
+        })}
+    </div>
+  );
+  const graph = draw ? graphFromResponse(draw) : null;
+  const rates = draw
+    ? [...draw.topology.edges, ...draw.topology.elimination].map((r, i) => ({
+        ...r,
+        ...kineticEdits[i],
+      }))
+    : [];
+  const doseRows =
+    doseEdits ??
+    draw?.study.doseEvents?.map((e) => ({
+      time: e.time,
+      amount: e.amount,
+      duration: e.duration ?? 0,
+    })) ??
+    [];
+  const editRate = (
+    index: number,
+    patch: { kappa?: number; beta?: number | null; hill?: number },
+  ) => {
+    setKineticEdits((current) => ({
+      ...current,
+      [index]: { ...current[index], ...patch },
     }));
-    onInvalidate();
+    invalidate();
   };
-  const addDose = () => {
-    editedLatentModel.current = true;
-    setDoseEvents((current) => [...current, {
-      time: 1 - 0.5 ** current.length,
-      amount: 1,
-      duration: 0,
-      route: model.graph.route,
-    }]);
-    onInvalidate();
-  };
-  const removeDose = (index: number) => {
-    editedLatentModel.current = true;
-    if (index === 0) return;
-    setDoseEvents((current) => current.filter((_, eventIndex) => eventIndex !== index));
-    onInvalidate();
-  };
-  const resetDoses = () => {
-    editedLatentModel.current = true;
-    setDoseEvents([initialDose(model.graph.route)]);
-    onInvalidate();
-  };
-  const resampleGrid = () => {
-    setGridDraw((current) => current + 1);
-    onInvalidate();
-  };
-  const toggleSection = (section: keyof typeof openSections) => {
-    setOpenSections((current) => ({ ...current, [section]: !current[section] }));
-  };
-  const changeIndividuals = (value: number) => {
-    setIndividuals(Math.max(SYNTHETIC_LIMITS.individuals.min, Math.min(SYNTHETIC_LIMITS.individuals.max, value)));
-    onInvalidate();
-  };
-  const changeObservations = (value: number) => {
-    setObservations(Math.max(SYNTHETIC_LIMITS.observations.min, Math.min(SYNTHETIC_LIMITS.observations.max, value)));
-    onInvalidate();
-  };
-
-  return <article className="card synthetic-builder">
-    <div className="section-heading synthetic-builder-heading">
-      <h2>Synthetic cohort model</h2>
-    </div>
-    <div className="synthetic-generate-controls">
-      <label>Individuals
-        <input aria-label="Cohort individuals" type="number" min={SYNTHETIC_LIMITS.individuals.min} max={SYNTHETIC_LIMITS.individuals.max} step="1" value={individuals} onChange={(event) => changeIndividuals(Number(event.target.value))} />
-        <small>2–16</small>
-      </label>
-      <label>Observations per individual
-        <input type="number" min={SYNTHETIC_LIMITS.observations.min} max={SYNTHETIC_LIMITS.observations.max} step="1" value={observations} onChange={(event) => changeObservations(Number(event.target.value))} />
-        <small>2–20</small>
-      </label>
-      <label>Cohort seed
-        <input aria-label="Cohort seed" type="number" min="0" max={2 ** 31 - 1} step="1" value={generationSeed} onChange={(event) => {
-          const value = Number(event.target.value);
-          if (!Number.isFinite(value)) return;
-          setGenerationSeed(Math.max(0, Math.min(2 ** 31 - 1, Math.round(value))));
-          setManualSeed(true);
-          editedLatentModel.current = false;
-          onInvalidate();
-        }} />
-        <small>Random unless edited</small>
-      </label>
-      <button className="primary-button" type="button" onClick={generate}>Generate new cohort</button>
-    </div>
-    <div className="synthetic-accordion-stack">
-      <CollapsibleSection title="Compartment graph" open={openSections.graph} onToggle={() => toggleSection("graph")}>
-        <div className="synthetic-model-grid">
-          <div className="synthetic-graph-panel">
-            <CompartmentGraph graph={model.graph} />
-            <dl className="synthetic-facts">
-              <div><dt>Route</dt><dd>{model.graph.route}</dd></div>
-              <div><dt>Compartments</dt><dd>{model.graph.nodes.length}</dd></div>
-              <div><dt>Fluxes</dt><dd>{model.kinetics.rates.length}</dd></div>
-              <div><dt>Protocol</dt><dd>{activeModel.protocol.pattern}</dd></div>
-            </dl>
-            <div className="synthetic-graph-actions"><button className="draw-model-button" type="button" onClick={drawModel}>Draw new compartment model</button></div>
-          </div>
-          <div className="synthetic-equations">
-            <h3>Mass balances</h3>
-            <div className="synthetic-equation-list">{equations.map((equation) => <Latex key={equation} tex={equation} block />)}</div>
-            <h3>Flux laws</h3>
-            <div className="synthetic-equation-list compact">{model.kinetics.rates.map((rate) => <Latex key={rate.id} tex={equationForRate(rate)} block />)}</div>
-            <p><i>X</i><sub>a</sub> is the amount in compartment a; τ is dimensionless time; J<sub>ab</sub> is flux from a to b; κ is a rate ratio; β and h control saturation; and r(τ) is a positive time-varying rate modulation.</p>
-          </div>
-        </div>
-      </CollapsibleSection>
-      <CollapsibleSection title="Kinetic parameters" open={openSections.kinetics} onToggle={() => toggleSection("kinetics")}>
-        <KineticTable graph={model.graph} rates={model.kinetics.rates} onChange={changeRate} />
-      </CollapsibleSection>
-      <CollapsibleSection title="Dose and observation protocol" open={openSections.protocol} onToggle={() => toggleSection("protocol")}>
-        <div className="synthetic-protocol-heading">
-          <div className="synthetic-schedule-controls"><label>Observation schedule
-            <select value={acquisition.family} onChange={(event) => changeAcquisition({ family: event.target.value as SyntheticAcquisition["family"] })}>
-              <option value="exact">Exact scheduled</option>
-              <option value="pseudo_scheduled">Pseudo-scheduled</option>
-              <option value="unscheduled">Unscheduled</option>
-            </select>
-          </label>
-          <label>Time weighting
-            <select value={acquisition.shape} onChange={(event) => changeAcquisition({ shape: event.target.value as SyntheticAcquisition["shape"] })}>
-              <option value="uniform">Uniform</option>
-              <option value="early">Early weighted</option>
-              <option value="late">Late weighted</option>
-              <option value="clustered">Clustered</option>
-            </select>
-          </label>
-          <button className="secondary-button grid-resample" type="button" onClick={resampleGrid}>Resample observation grid</button></div>
-        </div>
-        <DoseTimeline events={activeModel.protocol.events} observationTimes={observationPreview.times} />
-        <div className="synthetic-dose-editor">{activeModel.protocol.events.map((event, index) => <div className="synthetic-dose-row" key={`dose-${index}`}>
-          <span>Dose {index + 1}</span>
-          <span className="synthetic-dose-input">Time τ <ParameterInput label={`Dose ${index + 1} time`} value={event.time} min={0} max={1} disabled={index === 0} onCommit={(value) => changeDose(index, "time", value)} /></span>
-          <span className="synthetic-dose-input">Dose d <ParameterInput label={`Dose ${index + 1} relative amount`} value={event.amount} min={0.001} onCommit={(value) => changeDose(index, "amount", value)} /></span>
-          <span className="synthetic-dose-input">Duration Δτ <ParameterInput label={`Dose ${index + 1} duration`} value={event.duration} min={0} max={1 - event.time} onCommit={(value) => changeDose(index, "duration", value)} /></span>
-          <span className="synthetic-dose-kind">{event.duration > 0 ? "infusion" : "bolus"}</span>
-          <button className="icon-button" type="button" aria-label={`Remove dose ${index + 1}`} disabled={index === 0} onClick={() => removeDose(index)}>×</button>
-        </div>)}</div>
-        <div className="synthetic-dose-actions"><button className="secondary-button" type="button" onClick={addDose}>+ Add dose</button><button className="secondary-button quiet" type="button" onClick={resetDoses}>Reset protocol</button></div>
-      </CollapsibleSection>
-      {censoringControls && <CollapsibleSection title="Data censoring" open={openSections.censoring} onToggle={() => toggleSection("censoring")}>
-        {censoringControls(() => setManualCensoring(true))}
-      </CollapsibleSection>}
-    </div>
-  </article>;
+  const configuration =
+    draw?.provenance.resolved.configuration ?? description?.configuration ?? {};
+  return (
+    <article className="card synthetic-builder" aria-busy={busy}>
+      <div className="section-heading synthetic-builder-heading">
+        <h2>Synthetic cohort model · {version}</h2>
+      </div>
+      <div className="synthetic-generate-controls">
+        <label>
+          Individuals
+          <input
+            aria-label="Cohort individuals"
+            type="number"
+            min="2"
+            max="16"
+            disabled={busy}
+            value={individuals}
+            onChange={(e) => {
+              setIndividuals(
+                Math.max(2, Math.min(16, Math.round(Number(e.target.value)))),
+              );
+              invalidate();
+            }}
+          />
+        </label>
+        <label>
+          Observations per individual
+          <input
+            type="number"
+            min="2"
+            max="20"
+            disabled={busy}
+            value={observations}
+            onChange={(e) => {
+              setObservations(
+                Math.max(2, Math.min(20, Math.round(Number(e.target.value)))),
+              );
+              invalidate();
+            }}
+          />
+        </label>
+        <label>
+          Cohort seed
+          <input
+            aria-label="Cohort seed"
+            type="number"
+            min="0"
+            max={2 ** 31 - 1}
+            disabled={busy}
+            value={seed}
+            onChange={(e) => {
+              setSeed(
+                Math.max(
+                  0,
+                  Math.min(2 ** 31 - 1, Math.round(Number(e.target.value))),
+                ),
+              );
+              fixedSeed.current = true;
+              invalidate();
+            }}
+          />
+        </label>
+        <button
+          className="primary-button"
+          disabled={busy || !description}
+          onClick={() => void run()}
+        >
+          {busy ? "Generating…" : "Generate new cohort"}
+        </button>
+      </div>
+      {error && (
+        <p role="alert">
+          {error}{" "}
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => window.location.reload()}
+          >
+            Reconnect
+          </button>
+        </p>
+      )}
+      <div className="synthetic-accordion-stack">
+        {section(
+          "graph",
+          "Compartment graph",
+          <>
+            {controls(version === "v1" ? [] : ["graph"])}
+            {draw && graph && (
+              <div className="synthetic-model-grid">
+                <div className="synthetic-graph-panel">
+                  <CompartmentGraph graph={graph} />
+                  <dl className="synthetic-facts">
+                    <div>
+                      <dt>Route</dt>
+                      <dd>{draw.study.route}</dd>
+                    </div>
+                    <div>
+                      <dt>Compartments</dt>
+                      <dd>{graph.nodes.length}</dd>
+                    </div>
+                    <div>
+                      <dt>Fluxes</dt>
+                      <dd>{rates.length}</dd>
+                    </div>
+                  </dl>
+                  <div className="synthetic-graph-actions">
+                    <button
+                      className="draw-model-button"
+                      disabled={busy}
+                      onClick={() => void run(false, true)}
+                    >
+                      Draw new compartment model
+                    </button>
+                  </div>
+                </div>
+                <div className="synthetic-equations">
+                  <h3>Mass balances</h3>
+                  {graph.nodes.map((n) => (
+                    <Latex
+                      key={n.id}
+                      tex={balanceEquation(graph, n.id)}
+                      block
+                    />
+                  ))}
+                  <h3>Flux laws</h3>
+                  {rates.map((r, i) => (
+                    <Latex
+                      key={i}
+                      tex={fluxEquation(r, version, graph.central)}
+                      block
+                    />
+                  ))}
+                  <p>
+                    X is compartment amount; i labels the individual. J is a
+                    transfer or elimination flux. Dose events add amount to the
+                    indicated compartments.
+                  </p>
+                  {version === "v1" ? (
+                    <p>
+                      T is the original time horizon. Absorption, elimination
+                      and volume follow the archived OU paths; peripheral rates
+                      have sinusoidal variation. Concentration is central amount
+                      divided by the individual time-varying volume. The
+                      canonical port uses LSODA, not the archived RK4 solver.
+                    </p>
+                  ) : (
+                    <p>
+                      κ is the population rate, r includes individual rate
+                      multipliers and time-varying paths. β is an amount-based
+                      saturation threshold, h is the Hill exponent and K
+                      controls modulation. Concentration also depends on
+                      individual volume.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </>,
+        )}
+        {section(
+          "kinetics",
+          "Kinetic parameters and priors",
+          <>
+            {controls(
+              version === "v1"
+                ? ["study"]
+                : ["dynamics", "ou", "cohort", "covariate"],
+            )}
+            {draw &&
+              (version === "v1" ? (
+                <LinearPopulation population={draw.native?.population ?? {}} />
+              ) : (
+                <div className="synthetic-table-wrap">
+                  <table className="synthetic-parameter-table">
+                    <thead>
+                      <tr>
+                        <th>Connection</th>
+                        <th>Law</th>
+                        <th>κ</th>
+                        <th>β (amount)</th>
+                        <th>h</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rates.map((r, i) => (
+                        <tr key={i}>
+                          <td>
+                            {draw.topology.roles[r.node ?? r.src]} →{" "}
+                            {r.node === undefined
+                              ? draw.topology.roles[r.dst!]
+                              : "elimination"}
+                          </td>
+                          <td>
+                            <select
+                              aria-label={`Flux ${i + 1} law`}
+                              disabled={busy}
+                              value={r.beta == null ? "linear" : "saturable"}
+                              onChange={(e) =>
+                                editRate(i, {
+                                  beta: e.target.value === "linear" ? null : 1,
+                                })
+                              }
+                            >
+                              <option value="linear">linear</option>
+                              <option value="saturable">saturable</option>
+                            </select>
+                            {r.mod_node != null ? ` + ${r.mod_type}` : ""}
+                            {r.gate_lag != null ? " + time gate" : ""}
+                          </td>
+                          <td>
+                            <NumericEdit
+                              label={`Flux ${i + 1} rate`}
+                              value={r.kappa!}
+                              min={0.00001}
+                              max={1000}
+                              disabled={busy}
+                              onCommit={(value) =>
+                                editRate(i, { kappa: value })
+                              }
+                            />
+                          </td>
+                          <td>
+                            {r.beta == null ? (
+                              "—"
+                            ) : (
+                              <NumericEdit
+                                label={`Flux ${i + 1} threshold`}
+                                value={r.beta}
+                                min={0.00001}
+                                max={1000}
+                                disabled={busy}
+                                onCommit={(value) =>
+                                  editRate(i, { beta: value })
+                                }
+                              />
+                            )}
+                          </td>
+                          <td>
+                            {r.beta == null ? (
+                              "—"
+                            ) : (
+                              <NumericEdit
+                                label={`Flux ${i + 1} exponent`}
+                                value={r.hill ?? 1}
+                                min={0.00001}
+                                max={3}
+                                disabled={busy}
+                                onCommit={(value) =>
+                                  editRate(i, { hill: value })
+                                }
+                              />
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            {draw && (
+              <details>
+                <summary>Sampled population and individual parameters</summary>
+                <ValueTable value={draw.topology} />
+                <ValueTable value={draw.population} />
+                <ValueTable value={draw.individualTruth} />
+              </details>
+            )}
+          </>,
+        )}
+        {version === "v7" &&
+          section(
+            "covariates",
+            "Patient covariates",
+            <>
+              <p>
+                Age, weight, height, sex, renal and hepatic function, and
+                metabolic phenotype. Missing fields remain missing; they are not
+                zero-valued patients. These influence the simulated dynamics;
+                the currently served Pythia models do not condition on these
+                fields.
+              </p>
+              {controls(["physiology"])}
+              {draw && (
+                <div className="synthetic-table-wrap">
+                  <table className="synthetic-parameter-table">
+                    <thead>
+                      <tr>
+                        <th>Individual</th>
+                        {[
+                          "Age (years)",
+                          "Weight (kg)",
+                          "Height (cm)",
+                          "Sex",
+                          "Renal ratio",
+                          "Hepatic ratio",
+                          "Metabolic phenotype",
+                        ].map((k) => (
+                          <th key={k}>{k}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {draw.study.subjects.map((s, i) => (
+                        <tr key={s.id}>
+                          <td>{i + 1}</td>
+                          {[
+                            "age_years",
+                            "weight_kg",
+                            "height_cm",
+                            "sex",
+                            "renal_function_ratio",
+                            "hepatic_function_ratio",
+                            "metabolic_phenotype",
+                          ].map((k) => (
+                            <td key={k}>
+                              {typeof s.covariates?.[k] === "number"
+                                ? Number(s.covariates[k]).toPrecision(4)
+                                : String(s.covariates?.[k] ?? "Missing")}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {draw && (
+                <details>
+                  <summary>Latent physiology (simulation truth)</summary>
+                  <ValueTable
+                    value={Object.fromEntries(
+                      Object.entries(draw.individualTruth).map(([id, v]) => [
+                        id,
+                        v.semantic_physiology,
+                      ]),
+                    )}
+                  />
+                </details>
+              )}
+            </>,
+          )}
+        {section(
+          "protocol",
+          "Dose and observation protocol",
+          <>
+            {controls(["dosing"])}
+            {draw && version !== "v1" && (
+              <>
+                <div className="synthetic-dose-editor">
+                  {doseRows.map((event, index) => (
+                    <div className="synthetic-dose-row" key={index}>
+                      <span>Dose {index + 1}</span>
+                      <span>
+                        Time τ{" "}
+                        <NumericEdit
+                          label={`Dose ${index + 1} time`}
+                          value={event.time}
+                          min={0}
+                          max={1 - event.duration}
+                          disabled={busy || index === 0}
+                          onCommit={(value) => {
+                            setDoseEdits(
+                              doseRows.map((e, i) =>
+                                i === index ? { ...e, time: value } : e,
+                              ),
+                            );
+                            invalidate();
+                          }}
+                        />
+                      </span>
+                      <span>
+                        Amount{" "}
+                        <NumericEdit
+                          label={`Dose ${index + 1} amount`}
+                          value={event.amount}
+                          min={0.001}
+                          max={100}
+                          disabled={busy}
+                          onCommit={(value) => {
+                            setDoseEdits(
+                              doseRows.map((e, i) =>
+                                i === index ? { ...e, amount: value } : e,
+                              ),
+                            );
+                            invalidate();
+                          }}
+                        />
+                      </span>
+                      <button
+                        className="icon-button"
+                        aria-label={`Remove dose ${index + 1}`}
+                        disabled={busy || index === 0}
+                        onClick={() => {
+                          setDoseEdits(doseRows.filter((_, i) => i !== index));
+                          invalidate();
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="synthetic-dose-actions">
+                  <label htmlFor="shared-infusion-duration">
+                    Shared infusion duration (0 = bolus)
+                    <NumericEdit
+                      id="shared-infusion-duration"
+                      label="Shared infusion duration"
+                      value={doseRows[0]?.duration ?? 0}
+                      min={0}
+                      max={1 - Math.max(...doseRows.map((e) => e.time))}
+                      disabled={busy}
+                      onCommit={(value) => {
+                        setDoseEdits(
+                          doseRows.map((e) => ({ ...e, duration: value })),
+                        );
+                        invalidate();
+                      }}
+                    />
+                  </label>
+                  <button
+                    className="secondary-button"
+                    disabled={
+                      busy ||
+                      doseRows.length >= 8 ||
+                      (doseRows.at(-1)?.time ?? 0) +
+                        (doseRows[0]?.duration ?? 0) >=
+                        1
+                    }
+                    onClick={() => {
+                      const duration = doseRows[0]?.duration ?? 0;
+                      const last = doseRows.at(-1)?.time ?? 0;
+                      setDoseEdits([
+                        ...doseRows,
+                        {
+                          time: last + (1 - duration - last) / 2,
+                          amount: 1,
+                          duration,
+                        },
+                      ]);
+                      invalidate();
+                    }}
+                  >
+                    + Add dose
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={() => {
+                      setDoseEdits([{ time: 0, amount: 1, duration: 0 }]);
+                      invalidate();
+                    }}
+                  >
+                    Single unit bolus
+                  </button>
+                </div>
+              </>
+            )}
+            <div className="synthetic-schedule-controls">
+              <label>
+                Observation schedule
+                <select
+                  disabled={busy}
+                  value={schedule}
+                  onChange={(e) => {
+                    setSchedule(e.target.value);
+                    invalidate();
+                  }}
+                >
+                  <option value="exact">Exact scheduled</option>
+                  <option value="pseudo_scheduled">Pseudo-scheduled</option>
+                  <option value="unscheduled">Unscheduled</option>
+                </select>
+              </label>
+              <label>
+                Time weighting
+                <select
+                  disabled={busy || schedule === "unscheduled"}
+                  value={shape}
+                  onChange={(e) => {
+                    setShape(e.target.value);
+                    invalidate();
+                  }}
+                >
+                  {["uniform", "early", "late", "clustered"].map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="secondary-button"
+                disabled={busy || schedule === "exact"}
+                onClick={() => {
+                  setGridSeed((v) => v + 1);
+                  invalidate();
+                }}
+              >
+                Resample observation grid
+              </button>
+            </div>
+            {draw && (
+              <>
+                <DoseTimeline
+                  events={(draw.study.doseEvents ?? []).map((e) => ({
+                    ...e,
+                    route: e.route as "oral" | "iv",
+                    duration: e.duration ?? 0,
+                  }))}
+                  observationTimes={draw.study.subjects.map((s) =>
+                    s.points.map(([t]) => t),
+                  )}
+                />
+                <ValueTable
+                  value={{
+                    "Reference dose events": draw.study.doseEvents,
+                    "Individual dose events": Object.fromEntries(
+                      draw.study.subjects.map((s, i) => [i + 1, s.doseEvents]),
+                    ),
+                  }}
+                />
+              </>
+            )}
+            <p>
+              Observations are subsets of the canonical 128-point bases, with
+              the terminal observation retained. This view shows one source
+              cohort, not the five counterfactual arms of a corpus family.
+            </p>
+          </>,
+        )}
+        {censoringControls &&
+          section(
+            "censoring",
+            "Data censoring",
+            censoringControls(() => setCensorEdited(true)),
+          )}
+        {section(
+          "configuration",
+          "Complete configuration and provenance",
+          <>
+            {Object.entries(configuration).map(([name, value]) => (
+              <details key={name}>
+                <summary>{name}</summary>
+                <ValueTable value={value as Record<string, unknown>} />
+              </details>
+            ))}
+            {draw && (
+              <ValueTable
+                value={{
+                  provenance: draw.provenance,
+                  integration: draw.integration,
+                }}
+              />
+            )}
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => void run(true)}
+            >
+              Reset to canonical defaults
+            </button>
+          </>,
+        )}
+      </div>
+    </article>
+  );
 }

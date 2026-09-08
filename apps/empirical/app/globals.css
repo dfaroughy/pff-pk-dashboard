@@ -164,14 +164,17 @@ button { cursor: pointer; }
 .graph-zoom button { border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 4px 9px; font-size: 12px; }
 .graph-zoom button:disabled { opacity: .4; cursor: default; }
 .synthetic-edge { stroke: var(--muted); stroke-width: .45; fill: none; }
-.synthetic-edge.elimination { stroke: var(--orange); }
+.synthetic-edge.elimination { stroke: var(--magenta); stroke-dasharray: 1.8 1.2; }
 .synthetic-graph marker path { fill: var(--muted); }
+.synthetic-graph marker .synthetic-arrow-head.elimination { fill: var(--magenta); }
+.synthetic-graph marker .synthetic-arrow-head.dose { fill: var(--cyan); }
 .synthetic-node { fill: var(--paper); stroke: var(--line-bright); stroke-width: .55; }
 .synthetic-node.central { fill: var(--acid-fill); stroke: var(--acid); }
 .synthetic-node-index { fill: var(--ink); font-family: var(--font-data); font-size: 4.2px; font-weight: 700; text-anchor: middle; text-transform: uppercase; }
 .synthetic-node-index.central { fill: #142015; }
 .synthetic-node-role { fill: var(--muted); font-family: var(--font-data); font-size: 2.25px; font-weight: 600; text-anchor: middle; text-transform: uppercase; }
 .synthetic-flux-label { fill: var(--muted); font-family: var(--font-data); font-size: 2.15px; text-anchor: middle; }
+.synthetic-flux-label.elimination { fill: var(--magenta); }
 .synthetic-dose-arrow { stroke: var(--cyan); stroke-width: .55; }
 .synthetic-dose-label { fill: var(--cyan); font-family: var(--font-data); font-size: 2.4px; font-weight: 600; text-anchor: middle; text-transform: uppercase; }
 .synthetic-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 2px 0 0; border-top: 1px solid var(--line); }
@@ -413,3 +416,38 @@ button { cursor: pointer; }
 .dashboard-shell[data-theme="dark"] { --assay-amber: #ffd05a; }
 .censoring-notice { border-left: 3px solid var(--assay-amber); padding: .6rem 1rem; font: 0.85rem/1.5 Arial, sans-serif; }
 .assay-caption { font: 0.8rem/1.5 Arial, sans-serif; }
+/* Canonical prior controls share the existing compact accordion vocabulary. */
+.synthetic-prior-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin: 12px 0 20px; }
+.synthetic-prior-controls label { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; }
+.prior-range-inputs { display: flex; gap: 8px; }
+.prior-range-inputs input { width: 100%; min-width: 0; }
+.prior-value { max-width: 650px; overflow-wrap: anywhere; }
+.prior-value pre { white-space: pre-wrap; font-family: var(--font-data); font-size: 9px; max-height: 320px; overflow: auto; }
+.synthetic-profile-note { margin: 8px 0 16px; }
+
+/* One control treatment across all versions, including controls outside the
+   original protocol-heading wrapper. Keep headings and KaTeX fonts untouched. */
+.synthetic-builder label { color: var(--muted); font-family: var(--font-data); font-size: 8px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.synthetic-builder input, .synthetic-builder select {
+  min-width: 0;
+  border: 1px solid var(--line-bright);
+  border-radius: 0;
+  padding: 6px 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.synthetic-builder select { appearance: auto; padding-right: 24px; }
+.synthetic-builder label > input, .synthetic-builder label > select { display: block; margin-top: 4px; }
+.synthetic-builder input:focus, .synthetic-builder select:focus { border-color: var(--cyan); outline: none; }
+.synthetic-builder input:focus-visible, .synthetic-builder select:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+.synthetic-builder input:disabled, .synthetic-builder select:disabled { background: var(--wash); color: var(--faint); cursor: not-allowed; }
+.synthetic-parameter-table select { width: 110px; }
+.synthetic-parameter-table input { width: 100px; }
+.synthetic-accordion-content summary { color: var(--muted); font-family: var(--font-data); font-size: 9px; font-weight: 500; line-height: 1.5; cursor: pointer; }
+.synthetic-accordion-content p, .synthetic-profile-note { color: var(--muted); font-family: Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 400; line-height: 1.5; }
