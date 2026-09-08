@@ -9,6 +9,7 @@ import { dashboardRuntimeConfig } from "../lib/runtime-config";
 import type { Corpus, Study } from "../lib/types";
 import { ModelTrajectoryChart, ModelVpcChart, PkDistributionChart, TrajectoryChart, VpcChart } from "./StudyCharts";
 import { SyntheticStudyBuilder } from "./SyntheticStudyBuilder";
+import { CovariateTable, covariateColumns } from "./CovariateTable";
 import type { SyntheticVersion } from "../lib/synthetic-study";
 
 type WikipediaIntro = { paragraph: string; title: string; url: string };
@@ -112,7 +113,7 @@ function PlotScaleToggle({ logY, onChange, plot }: { logY: boolean; onChange: (l
 export function studyLabel(study: Study, studies: Study[]) {
   const sameDrug = studies.filter((candidate) => candidate.drug === study.drug);
   if (sameDrug.length === 1) return study.drug;
-  const dose = study.dose === null ? "dose not reported" : `${format(study.dose)} ${study.doseUnit}`;
+  const dose = study.dose === null ? (study.subjects.some((s) => s.doseEvents?.length) ? "individual doses" : "dose not reported") : `${format(study.dose)} ${study.doseUnit}`;
   return `${study.drug} — ${dose}`;
 }
 
@@ -239,6 +240,7 @@ export function DatasetUploadDialog({ onClose, onStudy }: {
 }
 
 export function ModelPanel({ study, onResult }: { study: Study; onResult: (result: InferenceResponse | null) => void }) {
+  const individualDosing = !study.doseEvents?.length && study.subjects.some((subject) => subject.doseEvents?.length);
   const apiRoot = dashboardRuntimeConfig().apiRoot;
   const hosted = !apiRoot.includes("127.0.0.1") && !apiRoot.includes("localhost");
   const protocolUnit = study.dose === null ? "relative exposure" : study.doseUnit;
@@ -264,7 +266,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
   const drawsError = validateInteger(draws, 1, maxDraws);
   const seedError = validateInteger(seed, 0, 2**31 - 1);
-  const controlsValid = (modelId === "pythia" || protocol.valid) && !drawsError && !seedError;
+  const controlsValid = !individualDosing && (modelId === "pythia" || protocol.valid) && !drawsError && !seedError;
   const selectedStatus = status?.models?.[modelId]
     ?? (modelId === (status?.defaultModelId ?? "pythia_dose") ? status : null);
   useEffect(() => {
@@ -389,7 +391,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
         <label className={seedError ? "invalid" : ""}>Seed <input aria-label="Random seed" aria-invalid={Boolean(seedError)} type="number" min="0" max={2**31 - 1} step="1" value={seed} onChange={(event) => { setSeed(event.target.value); invalidate(); }} />{seedError && <small className="field-error">{seedError}</small>}</label>
       </div>
     </div>
-    {modelId === "pythia_dose" && <><div className="event-list">
+    {modelId === "pythia_dose" && !individualDosing && <><div className="event-list">
       {events.map((event, index) => {
         const eventErrors = protocol.errors[event.id] ?? {};
         const ratio = contextDoseRatio(event.amount, referenceDose);
@@ -407,7 +409,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
     {!eligible && <p className="model-warning">Interactive Pythia-PK inference requires at least two individual trajectories.</p>}
     {!selectedStatus?.ready && <p className="model-warning">{hosted ? "The hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
     {modelId === "pythia_dose" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
-    {modelId === "pythia_dose" && eligible && study.dose === null && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
+    {modelId === "pythia_dose" && eligible && study.dose === null && !individualDosing && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
   </section>;
 }
@@ -546,7 +548,7 @@ export function Dashboard() {
           <section className="study-meta" aria-label="Cohort summary">
             <dl>
               <div><dt>Route</dt><dd>{selected.route}</dd></div>
-              <div><dt>Dose</dt><dd>{selected.dose === null ? "Not reported" : `${format(selected.dose)} ${selected.doseUnit}`}</dd></div>
+              <div><dt>Dose</dt><dd>{selected.dose === null ? (selected.subjects.some((s) => s.doseEvents?.length) ? "Individual doses" : "Not reported") : `${format(selected.dose)} ${selected.doseUnit}`}</dd></div>
               <div><dt>Individuals</dt><dd>{selected.subjects.length || "Aggregate"}</dd></div>
               <div><dt>Matrix</dt><dd>{selected.medium || "Not reported"}</dd></div>
             </dl>
@@ -599,10 +601,11 @@ export function Dashboard() {
               setSyntheticStudy(study); setSyntheticStale(false); setModelResult(null);
             }}
           />
-        </section> : <section className="overview-grid description-overview">
+        </section> : <section className={`overview-grid description-overview${covariateColumns(selected).length ? " with-covariates" : ""}`}>
           <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} />
             {selected.assay && <p className="assay-caption">LLOQ {selected.assay.lloq.toPrecision(3)} {selected.concentrationUnit} · {selected.assay.source}. Hollow markers: unresolved censoring. VPC is descriptive. Pythia and Pythia-Dose predictions are not censoring-aware.</p>}
           </article>
+          <CovariateTable study={selected} />
         </section>}
       </main>
     </div>

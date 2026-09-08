@@ -99,6 +99,18 @@ test("Wikipedia extracts are reduced to the first paragraph", () => {
   expect(firstParagraph("First paragraph.\n\nSecond paragraph.")).toBe("First paragraph.");
 });
 
+test.each(["pythia", "pythia_dose"])("individual dose histories cannot silently use a shared protocol in %s", async (modelId) => {
+  render(<ModelPanel study={{ ...study, dose: null, doseEvents: undefined,
+    subjects: study.subjects.map((s, i) => ({ ...s, doseEvents: [{ time: 0, amount: 10 + i, unit: "mg", route: "oral" }] })),
+  }} onResult={vi.fn()} />);
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), modelId);
+  expect((screen.getByRole("button", { name: "Run model" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByText(/This cohort has patient-specific doses/)).toBeNull();
+  expect(screen.queryByText(/No absolute exposure was reported/)).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Run model" }));
+  expect(mocks.runInference).not.toHaveBeenCalled();
+});
+
 test("imports a custom PK dataset through the file picker", async () => {
   const user = userEvent.setup();
   const onStudy = vi.fn();

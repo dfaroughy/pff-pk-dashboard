@@ -13,7 +13,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-PFFF_ROOT = Path(os.environ.get("PFFF_ROOT", Path(__file__).resolve().parents[3])).resolve()
+from adapt_cossac_data import SPECS, adapt
+
+PFFF_ROOT = Path(os.environ.get("PFFF_ROOT", Path(__file__).resolve().parents[4])).resolve()
 ROOT = Path(os.environ.get("PFFF_EMPIRICAL_ROOT", PFFF_ROOT / "corpora" / "empirical")).resolve()
 OUT = Path(__file__).resolve().parents[1] / "public" / "data" / "corpus.json"
 
@@ -280,6 +282,7 @@ def load_lenuzza() -> list[dict[str, Any]]:
 
 def main() -> None:
     studies = curate_studies(load_lenuzza() + load_individual_studies())
+    studies = add_cossac_studies(studies)
     studies.sort(key=lambda item: (
         bool(re.match(r"^\d+-hydroxy", item["drug"].lower())),
         item["drug"].lower(),
@@ -294,6 +297,19 @@ def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     print(f"Wrote {len(studies):,} studies to {OUT} ({OUT.stat().st_size / 1e6:.1f} MB)")
+
+
+def add_cossac_studies(studies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Replace specific overlapping exports, preserving unrelated drug studies."""
+    replacements = {
+        ("theophylline", "datasets::Theoph"),
+        ("remifentanil", "nlme::Remifentanil"),
+        ("warfarin", "nlmixr2data::warfarin (Funaki 2018)"),
+    }
+    additions = [adapt(ROOT, drug)[0] for drug in SPECS]
+    ids = {study["id"] for study in additions}
+    return [study for study in studies if
+            (study["drug"], study["source"]) not in replacements and study["id"] not in ids] + additions
 
 
 if __name__ == "__main__":

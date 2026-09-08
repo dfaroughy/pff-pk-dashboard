@@ -10,21 +10,22 @@ test("portable build contains the PK explorer entry point", async () => {
 });
 
 test("built catalogue contains the curated Lenuzza and empirical studies", async () => {
-  const corpus = JSON.parse(await readFile(new URL("../public/data/corpus.json", import.meta.url), "utf8"));
+  const corpus = JSON.parse(await readFile(new URL("../portable-dist/data/corpus.json", import.meta.url), "utf8"));
   assert.equal(corpus.schemaVersion, 1);
-  assert.equal(corpus.studies.length, 43);
+  assert.equal(corpus.studies.length, 44);
   const caffeine = corpus.studies.find((study) => study.id === "lenuzza-caffeine");
   assert.equal(caffeine.concentrationUnit, "ng/mL");
   assert.equal(caffeine.doseUnit, "mg");
   assert.ok(caffeine.subjects.length >= 8);
   assert.ok(corpus.studies.every((study) => study.subjects.length >= 2));
-  assert.ok(corpus.studies.every((study) => study.origin === "Lenuzza 2016" || study.origin === "Empirical individuals"));
+  assert.ok(corpus.studies.every((study) => ["Lenuzza 2016", "Empirical individuals", "COSSAC reference datasets"].includes(study.origin)));
 
   const drugs = corpus.studies.map((study) => study.drug);
   assert.equal(drugs[0], "caffeine");
   assert.deepEqual(drugs.slice(-3), ["1-hydroxy-midazolam", "4-hydroxy-tolbutamide", "5-hydroxy-omeprazole"]);
   assert.equal(drugs.filter((drug) => drug === "caffeine").length, 1);
-  assert.ok(!drugs.includes("warfarin"));
+  assert.equal(drugs.filter((drug) => drug === "warfarin").length, 1);
+  assert.equal(drugs.filter((drug) => drug === "tobramycin").length, 1);
   assert.ok(!drugs.includes("quinidine"));
   assert.ok(drugs.includes("quinidine gluconate"));
   assert.ok(drugs.includes("quinidine sulfate dihydrate"));
