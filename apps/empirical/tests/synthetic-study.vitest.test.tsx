@@ -4,13 +4,25 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { Dashboard, SyntheticResultsPlaceholder } from "../app/components/Dashboard";
-import { SyntheticStudyBuilder, balanceEquation } from "../app/components/SyntheticStudyBuilder";
+import { SyntheticStudyBuilder, balanceEquation, nodePosition } from "../app/components/SyntheticStudyBuilder";
 import { generateSyntheticCohort, previewSyntheticObservationTimes, sampleSyntheticModel } from "../app/lib/synthetic-study";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+test("compartment layouts retain node spacing across sampled chain lengths", () => {
+  for (let seed = 0; seed < 200; seed++) {
+    const { graph } = sampleSyntheticModel(seed);
+    const positions = graph.nodes.map((node) => nodePosition(graph, node.id));
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        expect(Math.hypot(positions[i].x - positions[j].x, positions[i].y - positions[j].y)).toBeGreaterThanOrEqual(24);
+      }
+    }
+  }
 });
 
 test("reserves all synthetic result panels before cohort generation", () => {

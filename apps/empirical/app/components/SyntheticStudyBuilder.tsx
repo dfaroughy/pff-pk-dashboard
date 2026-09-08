@@ -42,32 +42,37 @@ function compartmentSymbol(id: number) {
   return String.fromCharCode(97 + id);
 }
 
-function nodePosition(graph: GraphDraw, id: number) {
+export function nodePosition(graph: GraphDraw, id: number) {
   const node = graph.nodes.find((candidate) => candidate.id === id);
   if (!node) return { x: 50, y: 50 };
   const peers = graph.nodes.filter((candidate) => candidate.role === node.role);
   const index = peers.findIndex((candidate) => candidate.id === id);
-  if (node.role === "central") return { x: 54, y: 48 };
+  const chainLength = Math.max(1, graph.nodes.filter((n) => ["transit", "gut"].includes(n.role)).length, graph.nodes.filter((n) => ["depot_transit", "depot"].includes(n.role)).length);
+  const centralX = 20 + chainLength * 26;
+  if (node.role === "central") return { x: centralX, y: 52 };
   if (node.role === "peripheral") {
-    const offsets = peers.length === 1 ? [0] : peers.map((_, i) => -24 + 48 * i / (peers.length - 1));
-    return { x: 82, y: 48 + offsets[index] };
+    return { x: centralX + 36, y: 30 + index * 30 };
   }
-  if (node.role === "bile") return { x: 51, y: 14 };
+  if (node.role === "bile") return { x: centralX, y: 16 };
   const oral = graph.nodes.filter((candidate) => ["transit", "gut"].includes(candidate.role));
   if (["transit", "gut"].includes(node.role)) {
     const oralIndex = oral.findIndex((candidate) => candidate.id === id);
-    return { x: 8 + 36 * oralIndex / Math.max(1, oral.length - 1), y: 35 };
+    return { x: 20 + 26 * oralIndex, y: 35 };
   }
   const depot = graph.nodes.filter((candidate) => ["depot_transit", "depot"].includes(candidate.role));
   const depotIndex = depot.findIndex((candidate) => candidate.id === id);
-  return { x: 8 + 36 * depotIndex / Math.max(1, depot.length - 1), y: 72 };
+  return { x: 20 + 26 * depotIndex, y: 80 };
 }
 
 function CompartmentGraph({ graph }: { graph: GraphDraw }) {
+  const [zoom, setZoom] = useState(1);
+  const positions = graph.nodes.map((node) => nodePosition(graph, node.id));
+  const width = Math.max(...positions.map((p) => p.x)) + 40;
+  const height = Math.max(105, ...positions.map((p) => p.y + 30));
   const reversePairs = new Set(graph.edges
     .filter((edge) => graph.edges.some((candidate) => candidate.src === edge.dst && candidate.dst === edge.src))
     .map((edge) => `${Math.min(edge.src, edge.dst)}-${Math.max(edge.src, edge.dst)}`));
-  return <svg className="synthetic-graph" viewBox="0 0 100 100" role="img" aria-label="Sampled compartment model graph">
+  return <><div className="graph-zoom"><button type="button" aria-label="Zoom out compartment graph" disabled={zoom <= 0.75} onClick={() => setZoom((z) => Math.max(.75, z - .25))}>−</button><button type="button" onClick={() => setZoom(1)}>Reset zoom</button><button type="button" aria-label="Zoom in compartment graph" disabled={zoom >= 3} onClick={() => setZoom((z) => Math.min(3, z + .25))}>+</button></div><div className="synthetic-graph-viewport"><svg className="synthetic-graph" style={{ width: `${width * 4 * zoom}px` }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Sampled compartment model graph">
     <defs>
       <marker id="synthetic-arrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" /></marker>
     </defs>
@@ -81,7 +86,7 @@ function CompartmentGraph({ graph }: { graph: GraphDraw }) {
       const start = { x: from.x + dx / length * inset, y: from.y + dy / length * inset };
       const end = { x: to.x - dx / length * inset, y: to.y - dy / length * inset };
       const paired = reversePairs.has(`${Math.min(edge.src, edge.dst)}-${Math.max(edge.src, edge.dst)}`);
-      const offset = paired ? (edge.src < edge.dst ? 2.2 : -2.2) : 0;
+      const offset = paired ? 2.2 : 0;
       const ox = -dy / length * offset;
       const oy = dx / length * offset;
       return <g key={edge.id}>
@@ -91,7 +96,7 @@ function CompartmentGraph({ graph }: { graph: GraphDraw }) {
     })}
     {graph.elimNodes.map((id, index) => {
       const from = nodePosition(graph, id);
-      const to = { x: 94, y: 88 - index * 5 };
+      const to = { x: width - 12, y: height - 12 - index * 8 };
       return <g key={`elim-${id}`}>
         <line className="synthetic-edge elimination" x1={from.x + 4} y1={from.y + 4} x2={to.x} y2={to.y} markerEnd="url(#synthetic-arrow)" />
         <text className="synthetic-flux-label" x={(from.x + to.x) / 2} y={(from.y + to.y) / 2}>J{compartmentSymbol(id)}∅</text>
@@ -113,7 +118,7 @@ function CompartmentGraph({ graph }: { graph: GraphDraw }) {
         <text className="synthetic-dose-label" x={position.x} y={Math.max(3, position.y - 20 - index * 3)}>{Math.round(fraction * 100)}% dose</text>
       </g>;
     })}
-  </svg>;
+  </svg></div></>;
 }
 
 export function balanceEquation(graph: GraphDraw, nodeId: number) {
