@@ -39,8 +39,8 @@ dashboard and does not require regenerating the training corpus.
 ## Current limitations
 
 Both Pythia and Pythia-Dose lack censoring-aware dose prediction. Inference is
-available on empirical and censored synthetic cohorts, with a nonblocking warning
-in the model panel. Reported concentrations (including values clipped to LLOQ)
+available on empirical and censored synthetic cohorts. The model panel omits the
+repeated warning; these limitations remain documented here. Reported concentrations (including values clipped to LLOQ)
 are passed unchanged to the legacy models as numerical observations, not as
 inequality constraints. Predictions are not assay-corrected; dose changes may
 incorrectly scale the floor. This is exploratory use, not censoring-aware inference.

@@ -9,11 +9,12 @@
     />
     <title>Prior-fitted flows for PK/PD</title>
     <link rel="stylesheet" href="./style.css" />
+    <script src="./theme.js" defer></script>
   </head>
   <body>
     <main>
       <header>
-        <p class="eyebrow">PFF · pharmacokinetic function distributions</p>
+        <div class="masthead"><button class="theme-switch" type="button" aria-label="Switch to dark mode" aria-pressed="false" hidden><span aria-hidden="true">☀</span></button></div>
         <h1>Prior-fitted flows<br />for PK/PD</h1>
         <p class="lede">
           Explore observed pharmacokinetic cohorts, generate synthetic cohorts,
@@ -25,12 +26,12 @@
         <a href="./empirical/">
           <span>01</span>
           <div>
-            <strong>Empirical cohort</strong>
+            <strong>Empirical cohorts</strong>
             <p>Observed trajectories, VPCs, PK summaries and Pythia dose interventions.</p>
           </div>
           <b aria-hidden="true">↗</b>
         </a>
-        <a href="./empirical/?mode=synthetic">
+        <a href="./synthetic/">
           <span>02</span>
           <div>
             <strong>Synthetic cohorts</strong>
@@ -48,10 +49,6 @@
         </a>
       </nav>
 
-      <footer>
-        <span>Mesh-consistent conditional generation</span>
-        <span>Dimensionless PK dynamics</span>
-      </footer>
     </main>
   </body>
 </html>

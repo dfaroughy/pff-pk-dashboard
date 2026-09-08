@@ -85,26 +85,17 @@ button { cursor: pointer; }
 .workspace-title { font-size: clamp(32px, 3.2vw, 50px); font-weight: 560; letter-spacing: -.055em; line-height: .95; }
 .topbar-meta { display: flex; align-items: center; gap: 7px; }
 .theme-switch {
-  height: 29px;
+  height: 36px;
+  width: 36px;
   display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
   border: 1px solid var(--line-bright);
-  padding: 3px 9px 3px 4px;
+  padding: 0;
   background: var(--paper);
   color: var(--ink);
 }
-.theme-switch i {
-  width: 21px;
-  height: 21px;
-  display: grid;
-  place-items: center;
-  background: var(--acid-fill);
-  color: #142015;
-  font-style: normal;
-  font-size: 11px;
-}
-.theme-switch b { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.theme-switch span { font: 22px sans-serif; }
 
 .workspace { height: calc(100vh - 104px); }
 .section-heading h2, .card-heading h2, .model-panel h2 {

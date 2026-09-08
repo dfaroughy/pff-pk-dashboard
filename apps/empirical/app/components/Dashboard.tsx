@@ -403,7 +403,6 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
       {!events.length && <p className="empty-protocol">Add at least one dose event.</p>}
     </div>
     <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div></>}
-    {(study.censoringApplied || study.assay) && <p className="model-warning">Exploratory inference: these models treat reported concentrations as exact values and do not account for censoring. Dose changes may incorrectly scale the assay floor.</p>}
     {!eligible && <p className="model-warning">Interactive Pythia-PK inference requires at least two individual trajectories.</p>}
     {!selectedStatus?.ready && <p className="model-warning">{hosted ? "The hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
     {modelId === "pythia_dose" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
@@ -493,7 +492,7 @@ function IndividualsCaption({ study, result }: {
 export function Dashboard() {
   const [corpus, setCorpus] = useState<Corpus | null>(null);
   const [customStudy, setCustomStudy] = useState<Study | null>(null);
-  const initialMode = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("mode");
+  const initialMode = typeof window === "undefined" ? null : /\/synthetic(?:\/|\/index\.html)?$/.test(window.location.pathname) ? "synthetic" : new URLSearchParams(window.location.search).get("mode");
   const [uploadOpen, setUploadOpen] = useState(initialMode === "upload");
   const [syntheticMode, setSyntheticMode] = useState(initialMode === "synthetic");
   const [syntheticStudy, setSyntheticStudy] = useState<Study | null>(() => initialMode === "synthetic" ? generateInitialSyntheticCohort() : null);
@@ -525,7 +524,7 @@ export function Dashboard() {
     <header className="topbar">
       <div className="workspace-title">{syntheticMode ? "Synthetic Cohorts" : "Empirical Cohorts"}</div>
       <div className="topbar-meta">
-        <button className="theme-switch" type="button" aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`} aria-pressed={darkMode} onClick={() => setDarkMode(!darkMode)}><i>{darkMode ? "☾" : "☀"}</i><b>{darkMode ? "Dark" : "Light"}</b></button>
+        <button className="theme-switch" type="button" aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`} aria-pressed={darkMode} onClick={() => setDarkMode(!darkMode)}><span aria-hidden="true">{darkMode ? "☾" : "☀"}</span></button>
       </div>
     </header>
     <div className="workspace">

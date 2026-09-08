@@ -75,7 +75,7 @@ const response: InferenceResponse = {
   provenance: { checkpointSha256: "abc", normalization: "test", sourceProcess: {}, device: "cpu", runtimeSeconds: 0.1 },
 };
 
-test.each(["pythia", "pythia_dose"])("censored synthetic cohorts can reach %s with a warning", async (modelId) => {
+test.each(["pythia", "pythia_dose"])("censored synthetic cohorts can reach %s without a blocking notice", async (modelId) => {
   mocks.runInference.mockResolvedValue(response);
   render(<ModelPanel study={{ ...study, censoringApplied: true }} onResult={vi.fn()} />);
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), modelId);
@@ -85,7 +85,7 @@ test.each(["pythia", "pythia_dose"])("censored synthetic cohorts can reach %s wi
   await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
   expect(mocks.runInference.mock.calls[0][0].modelId).toBe(modelId);
   expect(mocks.runInference.mock.calls[0][0].study.subjects).toEqual(study.subjects);
-  expect(screen.getByText(/do not account for censoring/)).toBeTruthy();
+  expect(screen.queryByText(/Exploratory inference:/)).toBeNull();
 });
 
 test("study labels add dose only when one analyte has multiple datasets", () => {

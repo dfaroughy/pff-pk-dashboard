@@ -206,10 +206,14 @@ test("keeps the previous synthetic plots visible but faded until regeneration", 
   expect(screen.getByText("Empirical Cohorts")).toBeTruthy();
   expect(document.querySelector(".study-browser")).toBeNull();
   expect(screen.queryByRole("button", { name: "Synthetic cohort" })).toBeNull();
-  window.history.replaceState({}, "", "?mode=synthetic");
+  window.history.replaceState({}, "", "/pff-pk-dashboard/synthetic/");
   cleanup();
   render(<Dashboard />);
   expect(await screen.findByText("Synthetic Cohorts")).toBeTruthy();
+  const themeToggle = screen.getByRole("button", { name: "Switch to dark mode" });
+  expect(themeToggle.textContent).toBe("☀");
+  await user.click(themeToggle);
+  expect(screen.getByRole("button", { name: "Switch to light mode" }).textContent).toBe("☾");
   expect(screen.queryByLabelText("Empirical cohort")).toBeNull();
   expect(screen.queryByRole("region", { name: "Cohort summary" })).toBeNull();
   const chart = await screen.findByRole("img", { name: "Observed visual predictive check for Synthetic cohort" });

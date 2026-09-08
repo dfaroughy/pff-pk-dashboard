@@ -13,7 +13,8 @@ Space Grotesk, IBM Plex Mono, and the existing light/dark visual design are reta
 - `models/`: release manifests, not checkpoints.
 
 The standalone synthetic app was retired. Its previous implementation remains
-in Git history; `/synthetic/` redirects to `/empirical/?mode=synthetic`.
+in Git history; `/synthetic/` serves the integrated cohort builder directly,
+using the same application code as `/empirical/` without redirecting there.
 
 ## Local development and checks
 
