@@ -99,16 +99,25 @@ test("Wikipedia extracts are reduced to the first paragraph", () => {
   expect(firstParagraph("First paragraph.\n\nSecond paragraph.")).toBe("First paragraph.");
 });
 
-test.each(["pythia", "pythia_dose"])("individual dose histories cannot silently use a shared protocol in %s", async (modelId) => {
-  render(<ModelPanel study={{ ...study, dose: null, doseEvents: undefined,
+test.each(["pythia", "pythia_dose"])("individual dose histories are allowed only for plain Pythia: %s", async (modelId) => {
+  mocks.runInference.mockResolvedValue(response);
+  const cohort: Study = { ...study, dose: null, doseEvents: undefined,
     subjects: study.subjects.map((s, i) => ({ ...s, doseEvents: [{ time: 0, amount: 10 + i, unit: "mg", route: "oral" }] })),
-  }} onResult={vi.fn()} />);
+  };
+  render(<ModelPanel study={cohort} onResult={vi.fn()} />);
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), modelId);
-  expect((screen.getByRole("button", { name: "Run model" }) as HTMLButtonElement).disabled).toBe(true);
+  const run = screen.getByRole("button", { name: "Run model" }) as HTMLButtonElement;
+  await waitFor(() => expect(run.disabled).toBe(modelId !== "pythia"));
   expect(screen.queryByText(/This cohort has patient-specific doses/)).toBeNull();
   expect(screen.queryByText(/No absolute exposure was reported/)).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Run model" }));
-  expect(mocks.runInference).not.toHaveBeenCalled();
+  await userEvent.click(run);
+  if (modelId === "pythia") {
+    await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+    expect(mocks.runInference.mock.calls[0][0].modelId).toBe("pythia");
+    expect(mocks.runInference.mock.calls[0][0].study.subjects).toEqual(cohort.subjects);
+  } else {
+    expect(mocks.runInference).not.toHaveBeenCalled();
+  }
 });
 
 test("imports a custom PK dataset through the file picker", async () => {

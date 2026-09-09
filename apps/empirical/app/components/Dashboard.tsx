@@ -266,7 +266,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
   const drawsError = validateInteger(draws, 1, maxDraws);
   const seedError = validateInteger(seed, 0, 2**31 - 1);
-  const controlsValid = !individualDosing && (modelId === "pythia" || protocol.valid) && !drawsError && !seedError;
+  const controlsValid = (modelId === "pythia" || (!individualDosing && protocol.valid)) && !drawsError && !seedError;
   const selectedStatus = status?.models?.[modelId]
     ?? (modelId === (status?.defaultModelId ?? "pythia_dose") ? status : null);
   useEffect(() => {
