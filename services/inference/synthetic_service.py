@@ -46,20 +46,12 @@ COMMON = [
     ("graph.n_transit_max", "Maximum transit compartments", 0, 8),
     ("graph.p_recycling_loop", "Probability of recycling", 0, 1),
     ("graph.p_parallel_absorption", "Probability of parallel absorption", 0, 1),
-    ("dynamics.p_saturable_edge", "Probability of saturable flux", 0, 1),
     ("dynamics.log_rate_ratio_mean", "Log rate-ratio mean", -2, 2),
     ("dynamics.log_rate_ratio_std", "Log rate-ratio standard deviation", 0.1, 2),
-    ("ou.p_active", "Probability of time-varying rates", 0, 1),
     ("cohort.bsv_sigma_min", "Minimum between-person log standard deviation", 0, 0.8),
     ("cohort.bsv_sigma_max", "Maximum between-person log standard deviation", 0, 0.8),
-    ("covariate.p_covariate_study", "Probability of anonymous covariates", 0, 1),
-    ("covariate.p_observed", "Probability an anonymous covariate is observed", 0, 1),
-    ("dosing.p_multidose", "Probability of multiple doses", 0, 1),
-    ("dosing.p_infusion", "Probability of infusion", 0, 1),
 ]
 PHYSIOLOGY = [
-    ("physiology.observed_probability", "Probability a patient field is observed", 0, 1),
-    ("physiology.all_missing_probability", "Probability all patient fields are missing", 0, 1),
     ("physiology.age_min", "Minimum age (years)", 18, 90),
     ("physiology.age_max", "Maximum age (years)", 18, 90),
     ("physiology.weight_min", "Minimum weight (kg)", 40, 180),
@@ -191,6 +183,33 @@ def _indices(count, schedule, shape, rng):
     return indexes
 
 
+def _resampled_indices(count, shape, rng):
+    """Draw a fresh structured schedule from the stored regular observation base."""
+    edges = np.linspace(0, 1, BASE_POINTS)
+    if shape == "early":
+        cdf = np.sqrt(edges)
+    elif shape == "late":
+        cdf = 1 - np.sqrt(1 - edges)
+    elif shape == "clustered":
+        cdf = np.where(edges < .2, 2.5 * edges,
+                       np.where(edges < .8, .5, .5 + 2.5 * (edges - .8)))
+    else:
+        cdf = edges
+    weights = np.maximum(np.diff(cdf), 0)
+    sampled = rng.choice(BASE_POINTS - 1, count - 1, replace=False, p=weights / weights.sum())
+    return np.r_[np.sort(sampled), BASE_POINTS - 1]
+
+
+def _jitter_indices(template, rng):
+    indices = template.copy()
+    indices[:-1] += rng.integers(-2, 3, len(indices) - 1)
+    for i in range(len(indices)):
+        indices[i] = np.clip(indices[i], indices[i - 1] + 1 if i else 0,
+                             BASE_POINTS - len(indices) + i)
+    indices[-1] = BASE_POINTS - 1
+    return indices
+
+
 def _replay_edits(record, profile, payload):
     """Use the production arm solver for edits, preserving patients and clock."""
     edits = payload.get("kineticEdits", {})
@@ -245,8 +264,6 @@ def _replay_edits(record, profile, payload):
             a["time"] >= b["time"] for a, b in zip(events, events[1:], strict=False)
         ):
             raise ValueError("doses must start at zero and be strictly time ordered")
-        if len({e["duration"] for e in events}) != 1:
-            raise ValueError("production arm replay requires a shared infusion duration")
         events = [{**e, "route": record["protocol"]["route"]} for e in events]
     else:
         events = record["protocol"]["dose_events"]
@@ -283,6 +300,7 @@ def generate(payload):
         "schedule",
         "shape",
         "gridSeed",
+        "mlpSeed",
         "overrides",
         "action",
         "kineticEdits",
@@ -291,10 +309,11 @@ def generate(payload):
     if unknown:
         raise ValueError(f"unsupported synthetic controls: {sorted(unknown)}")
     seed = _integer(payload.get("seed", 46), "seed", 0, 2**31 - 1)
-    count = _integer(payload.get("individuals", 10), "individuals", 2, 16)
+    mlp_seed = None if payload.get("mlpSeed") is None else _integer(payload["mlpSeed"], "mlpSeed", 0, 2**31 - 1)
+    count = _integer(payload.get("individuals", 16), "individuals", 2, 100)
     observations = _integer(payload.get("observations", 8), "observations", 2, 20)
     grid_seed = _integer(payload.get("gridSeed", 0), "gridSeed", 0, 2**31 - 1)
-    schedule, shape = payload.get("schedule", "exact"), payload.get("shape", "early")
+    schedule, shape = payload.get("schedule", "unscheduled"), payload.get("shape", "early")
     if schedule not in ("exact", "pseudo_scheduled", "unscheduled") or shape not in (
         "uniform",
         "early",
@@ -304,17 +323,25 @@ def generate(payload):
         raise ValueError("unknown observation schedule")
     profile = _profile(version, payload.get("overrides", {}))
     record = generate_profile_study(
-        profile, seed, n_individuals=count, observation_points=BASE_POINTS
+        profile, seed, n_individuals=count, observation_points=BASE_POINTS, mlp_seed=mlp_seed
     )
     source_hash = digest(record)
     replayed = _replay_edits(record, profile, payload)
     subjects = []
     rng = np.random.default_rng(np.random.SeedSequence([seed, grid_seed, 2047]))
+    shared_indices = (
+        _resampled_indices(observations, shape, rng) if grid_seed else
+        _indices(observations, "exact", shape, rng)
+    ) if schedule != "unscheduled" else None
     for person in record["individuals"]:
         times, concentrations, _ = observation_view(
             record, person, "random" if schedule == "unscheduled" else "regular"
         )
-        indices = _indices(observations, schedule, shape, rng)
+        indices = (
+            shared_indices if schedule == "exact" else
+            _jitter_indices(shared_indices, rng) if schedule == "pseudo_scheduled" and grid_seed else
+            _indices(observations, schedule, shape, rng)
+        )
         subjects.append(
             {
                 "id": person["id"],
@@ -327,7 +354,7 @@ def generate(payload):
     provenance = {
         **record["metadata"]["scientific_profile"],
         "canonicalProfileSha256": get_profile(version).sha256,
-        "modified": profile.sha256 != get_profile(version).sha256 or replayed,
+        "modified": profile.sha256 != get_profile(version).sha256 or replayed or mlp_seed is not None,
         "sourceRecordSha256": source_hash,
         "kineticEdits": payload.get("kineticEdits", {}),
         "doseOverride": payload.get("doseEvents"),
@@ -373,6 +400,19 @@ def generate(payload):
 
 def synthetic_request(payload):
     """Bound expensive/unlucky numerical draws; never hang the public service."""
+    if isinstance(payload, dict) and payload.get("action") == "vpc":
+        from services.inference.pff_service import build_cohort
+        from pff_pk.metrics.dashboard_vpc import dashboard_vpc_summary, observed_vpc_summary
+        cohort = build_cohort(payload.get("study") or {})
+        bins = payload.get("numBins")
+        if bins is not None:
+            bins = _integer(bins, "numBins", 1, 100)
+        if "generatedConcentration" in payload:
+            return dashboard_vpc_summary(
+                payload["generatedConcentration"], payload.get("queryTime"), cohort,
+                num_bins=bins,
+            )
+        return observed_vpc_summary(cohort, num_bins=bins)
     if isinstance(payload, dict) and payload.get("action") == "describe":
         return generate(payload)
     result = subprocess.run(

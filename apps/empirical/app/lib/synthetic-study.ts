@@ -3,7 +3,7 @@ import type { Study } from "./types";
 export type SyntheticVersion = "v1" | "v6" | "v7";
 export const SYNTHETIC_INITIAL_SEED = 46;
 export const SYNTHETIC_LIMITS = {
-  individuals: { min: 2, max: 16, default: 10 },
+  individuals: { min: 2, max: 100, default: 16 },
   observations: { min: 2, max: 20, default: 8 },
 };
 export type DoseEvent = {
@@ -73,7 +73,21 @@ export type SyntheticResponse = {
     time_stop: number;
     [key: string]: unknown;
   };
-  covariateModel: Record<string, unknown> | null;
+  covariateModel: {
+    roster?: { name: string; type: string; observed: boolean | string; semantic?: boolean }[];
+    network?: {
+      layers: number;
+      width: number;
+      activation: string;
+      sparsity: number;
+      g_scale: number;
+      d_in: number;
+      clearance_targeted?: boolean;
+      parameters: { weight: number[][]; bias: number[] }[];
+      reference_rms: number[];
+    } | null;
+    [key: string]: unknown;
+  } | null;
   integration: Record<string, unknown>;
 };
 

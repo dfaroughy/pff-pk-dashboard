@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { GenericCovariates } from "./GenericCovariates";
 import type { Study } from "../lib/types";
 import { syntheticRequest } from "../lib/model-api";
 import {
@@ -79,18 +80,14 @@ function NumericEdit({
       max={max}
       disabled={disabled}
       value={draft ?? value}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (
-          draft !== null &&
-          draft.trim() &&
-          Number.isFinite(Number(draft)) &&
-          Number(draft) >= min &&
-          Number(draft) <= max
-        )
-          onCommit(Number(draft));
-        setDraft(null);
+      onChange={(e) => {
+        const text = e.target.value;
+        setDraft(text);
+        const number = Number(text);
+        if (text.trim() && Number.isFinite(number) && number >= min && number <= max && number !== value)
+          onCommit(number);
       }}
+      onBlur={() => setDraft(null)}
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
       }}
@@ -161,21 +158,23 @@ export function SyntheticStudyBuilder({
   version?: SyntheticVersion;
   onGenerate: (study: Study, newDrawSeed?: number) => void;
   onInvalidate: () => void;
-  censoringControls?: (onEdit: () => void) => ReactNode;
+  censoringControls?: ReactNode;
 }) {
   const [description, setDescription] = useState<ProfileDescription | null>(
     null,
   );
   const [draw, setDraw] = useState<SyntheticResponse | null>(null);
   const [seed, setSeed] = useState(SYNTHETIC_INITIAL_SEED);
-  const [individuals, setIndividuals] = useState(10);
+  const [individuals, setIndividuals] = useState(16);
   const [observations, setObservations] = useState(8);
-  const [schedule, setSchedule] = useState("exact");
+  const [schedule, setSchedule] = useState("unscheduled");
   const [shape, setShape] = useState("early");
   const [gridSeed, setGridSeed] = useState(0);
+  const [mlpSeed, setMlpSeed] = useState<number | null>(null);
   const [overrides, setOverrides] = useState<Record<string, number | number[]>>(
     {},
   );
+  const [graphOverrides, setGraphOverrides] = useState<Record<string, number | number[]>>({});
   const [kineticEdits, setKineticEdits] = useState<
     Record<string, { kappa?: number; beta?: number | null; hill?: number }>
   >({});
@@ -187,9 +186,7 @@ export function SyntheticStudyBuilder({
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  const [censorEdited, setCensorEdited] = useState(false);
-  const fixedSeed = useRef(false);
-  const edited = useRef(false);
+  const newDraw = useRef(true);
   const controller = useRef<AbortController | null>(null);
   const callbacks = useRef({ onGenerate, onInvalidate });
   useEffect(() => {
@@ -198,100 +195,67 @@ export function SyntheticStudyBuilder({
 
   useEffect(() => {
     const abort = new AbortController();
-    controller.current = abort;
-    const initialize = async () => {
-      try {
-        const profile = await syntheticRequest<ProfileDescription>(
-          { action: "describe", version },
-          abort.signal,
-        );
-        if (abort.signal.aborted) return;
-        setDescription(profile);
-        const result = await syntheticRequest<SyntheticResponse>(
-          {
-            version,
-            seed: SYNTHETIC_INITIAL_SEED,
-            individuals: 10,
-            observations: 8,
-            schedule: "exact",
-            shape: "early",
-          },
-          abort.signal,
-        );
-        if (abort.signal.aborted) return;
-        setDraw(result);
-        callbacks.current.onGenerate(result.study, result.provenance.seed);
-      } catch (e) {
-        if (!abort.signal.aborted)
+    void syntheticRequest<ProfileDescription>({ action: "describe", version }, abort.signal)
+      .then((profile) => { if (!abort.signal.aborted) setDescription(profile); })
+      .catch((e) => {
+        if (!abort.signal.aborted) {
           setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (!abort.signal.aborted) setBusy(false);
-      }
-    };
-    void initialize();
-    return () => {
-      abort.abort();
-      controller.current?.abort();
-    };
+          setBusy(false);
+        }
+      });
+    return () => abort.abort();
   }, [version]);
 
-  const invalidate = () => {
-    edited.current = true;
-    onInvalidate();
-  };
-  const run = async (reset = false, fresh = false) => {
-    if (busy) return;
-    const preserve =
-      !reset && !fresh && (fixedSeed.current || edited.current || censorEdited);
-    const nextSeed = preserve
-      ? seed
-      : crypto.getRandomValues(new Uint32Array(1))[0] % 2 ** 31;
-    const nextOverrides = reset ? {} : overrides;
-    const nextKinetics = preserve ? kineticEdits : {};
-    const nextDoses = reset ? null : doseEdits;
-    controller.current?.abort();
+  useEffect(() => {
+    if (!description) return;
     const abort = new AbortController();
     controller.current = abort;
+    const isNewDraw = newDraw.current;
+    // Coalesce typing while cancelling obsolete requests immediately. Only the
+    // latest completed request may replace the plot or enable inference.
+    callbacks.current.onInvalidate();
+    const timer = setTimeout(() => {
+      setBusy(true);
+      setError("");
+      void syntheticRequest<SyntheticResponse>({
+        version, seed, individuals, observations, schedule, shape, gridSeed,
+        overrides,
+        ...(mlpSeed !== null ? { mlpSeed } : {}),
+        ...(Object.keys(kineticEdits).length ? { kineticEdits } : {}),
+        ...(doseEdits ? { doseEvents: doseEdits } : {}),
+      }, abort.signal).then((result) => {
+        if (abort.signal.aborted) return;
+        setDraw(result);
+        callbacks.current.onGenerate(result.study, isNewDraw ? seed : undefined);
+        newDraw.current = false;
+      }).catch((e) => {
+        if (!abort.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+      }).finally(() => {
+        if (!abort.signal.aborted) setBusy(false);
+      });
+    }, isNewDraw ? 0 : 300);
+    return () => {
+      clearTimeout(timer);
+      abort.abort();
+    };
+  }, [description, version, seed, individuals, observations, schedule, shape,
+    gridSeed, mlpSeed, overrides, kineticEdits, doseEdits]);
+
+  const invalidate = () => {
+    controller.current?.abort();
     setBusy(true);
     setError("");
-    setSeed(nextSeed);
     onInvalidate();
-    try {
-      const result = await syntheticRequest<SyntheticResponse>(
-        {
-          version,
-          seed: nextSeed,
-          individuals,
-          observations,
-          schedule,
-          shape,
-          gridSeed,
-          overrides: nextOverrides,
-          ...(Object.keys(nextKinetics).length
-            ? { kineticEdits: nextKinetics }
-            : {}),
-          ...(nextDoses ? { doseEvents: nextDoses } : {}),
-        },
-        abort.signal,
-      );
-      if (abort.signal.aborted) return;
-      setDraw(result);
-      setOverrides(nextOverrides);
-      setKineticEdits(nextKinetics);
-      setDoseEdits(nextDoses);
-      callbacks.current.onGenerate(
-        result.study,
-        (edited.current || censorEdited) && !reset ? undefined : nextSeed,
-      );
-      setCensorEdited(false);
-      fixedSeed.current = false;
-      edited.current = false;
-    } catch (e) {
-      if (!abort.signal.aborted)
-        setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (!abort.signal.aborted) setBusy(false);
-    }
+  };
+  const sampleNewModel = (applyGraph = false) => {
+    if (applyGraph) setOverrides((current) => ({ ...current, ...graphOverrides }));
+    newDraw.current = true;
+    const random = crypto.getRandomValues(new Uint32Array(1))[0] % 2 ** 31;
+    setSeed(random === seed ? (random + 1) % 2 ** 31 : random);
+    setKineticEdits({});
+    setMlpSeed(null);
+    setDoseEdits(null);
+    invalidate();
   };
   const section = (key: string, title: string, children: ReactNode) => (
     <CollapsibleSection
@@ -302,12 +266,13 @@ export function SyntheticStudyBuilder({
       {children}
     </CollapsibleSection>
   );
-  const controls = (prefix: string[]) => (
+  const controls = (prefix: string[], staged = false) => (
     <div className="synthetic-prior-controls">
+
       {description?.controls
         .filter((c) => prefix.some((p) => c.path.startsWith(`${p}.`)))
         .map((c) => {
-          const value = overrides[c.path] ?? c.default;
+          const value = (staged ? graphOverrides : overrides)[c.path] ?? c.default;
           return (
             <label key={c.path}>
               {c.label}
@@ -320,18 +285,21 @@ export function SyntheticStudyBuilder({
                     min={c.min}
                     max={c.max}
                     step={c.integer ? 1 : "any"}
-                    disabled={busy}
+                    disabled={!description}
                     value={v}
                     onChange={(e) => {
                       const number = Number(e.target.value);
                       if (!Number.isFinite(number)) return;
-                      setOverrides((current) => ({
+                      (staged ? setGraphOverrides : setOverrides)((current) => ({
                         ...current,
                         [c.path]: Array.isArray(value)
                           ? value.map((x, j) => (i === j ? number : x))
                           : number,
                       }));
-                      setKineticEdits({});
+                      if (staged) return;
+                      if (c.path.startsWith("graph.") || c.path === "study.num_peripherals_range")
+                        setKineticEdits({});
+                      if (c.path.startsWith("dosing.")) setDoseEdits(null);
                       invalidate();
                     }}
                   />
@@ -381,13 +349,13 @@ export function SyntheticStudyBuilder({
             aria-label="Cohort individuals"
             type="number"
             min="2"
-            max="16"
-            disabled={busy}
+            max="100"
+            disabled={!description}
             value={individuals}
             onChange={(e) => {
-              setIndividuals(
-                Math.max(2, Math.min(16, Math.round(Number(e.target.value)))),
-              );
+              const next = Math.max(2, Math.min(100, Math.round(Number(e.target.value))));
+              if (!Number.isFinite(next) || next === individuals) return;
+              setIndividuals(next);
               invalidate();
             }}
           />
@@ -398,12 +366,12 @@ export function SyntheticStudyBuilder({
             type="number"
             min="2"
             max="20"
-            disabled={busy}
+            disabled={!description}
             value={observations}
             onChange={(e) => {
-              setObservations(
-                Math.max(2, Math.min(20, Math.round(Number(e.target.value)))),
-              );
+              const next = Math.max(2, Math.min(20, Math.round(Number(e.target.value))));
+              if (!Number.isFinite(next) || next === observations) return;
+              setObservations(next);
               invalidate();
             }}
           />
@@ -415,7 +383,7 @@ export function SyntheticStudyBuilder({
             type="number"
             min="0"
             max={2 ** 31 - 1}
-            disabled={busy}
+            disabled={!description}
             value={seed}
             onChange={(e) => {
               setSeed(
@@ -424,19 +392,25 @@ export function SyntheticStudyBuilder({
                   Math.min(2 ** 31 - 1, Math.round(Number(e.target.value))),
                 ),
               );
-              fixedSeed.current = true;
+              newDraw.current = true;
+              setMlpSeed(null);
+              setKineticEdits({});
+              setDoseEdits(null);
               invalidate();
             }}
           />
         </label>
         <button
           className="primary-button"
-          disabled={busy || !description}
-          onClick={() => void run()}
+          disabled={!description}
+          onClick={() => sampleNewModel()}
         >
-          {busy ? "Generating…" : "Generate new cohort"}
+          Sample new model
         </button>
       </div>
+      <p role="status">
+        {busy ? "Updating cohort curves…" : error ? "Update failed. Adjust a parameter to try again." : ""}
+      </p>
       {error && (
         <p role="alert">
           {error}{" "}
@@ -454,7 +428,6 @@ export function SyntheticStudyBuilder({
           "graph",
           "Compartment graph",
           <>
-            {controls(version === "v1" ? [] : ["graph"])}
             {draw && graph && (
               <div className="synthetic-model-grid">
                 <div className="synthetic-graph-panel">
@@ -473,14 +446,15 @@ export function SyntheticStudyBuilder({
                       <dd>{rates.length}</dd>
                     </div>
                   </dl>
-                  <div className="synthetic-graph-actions">
+                  <div className="synthetic-graph-sampling">
                     <button
                       className="draw-model-button"
-                      disabled={busy}
-                      onClick={() => void run(false, true)}
+                      disabled={!description}
+                      onClick={() => sampleNewModel(true)}
                     >
                       Draw new compartment model
                     </button>
+                    {version !== "v1" && controls(["graph"], true)}
                   </div>
                 </div>
                 <div className="synthetic-equations">
@@ -563,7 +537,7 @@ export function SyntheticStudyBuilder({
                           <td>
                             <select
                               aria-label={`Flux ${i + 1} law`}
-                              disabled={busy}
+                              disabled={!description}
                               value={r.beta == null ? "linear" : "saturable"}
                               onChange={(e) =>
                                 editRate(i, {
@@ -583,7 +557,7 @@ export function SyntheticStudyBuilder({
                               value={r.kappa!}
                               min={0.00001}
                               max={1000}
-                              disabled={busy}
+                              disabled={!description}
                               onCommit={(value) =>
                                 editRate(i, { kappa: value })
                               }
@@ -598,7 +572,7 @@ export function SyntheticStudyBuilder({
                                 value={r.beta}
                                 min={0.00001}
                                 max={1000}
-                                disabled={busy}
+                                disabled={!description}
                                 onCommit={(value) =>
                                   editRate(i, { beta: value })
                                 }
@@ -614,7 +588,7 @@ export function SyntheticStudyBuilder({
                                 value={r.hill ?? 1}
                                 min={0.00001}
                                 max={3}
-                                disabled={busy}
+                                disabled={!description}
                                 onCommit={(value) =>
                                   editRate(i, { hill: value })
                                 }
@@ -709,128 +683,34 @@ export function SyntheticStudyBuilder({
               )}
             </>,
           )}
+        {version !== "v1" && section(
+          "generic-covariates",
+          "Generic covariates and random MLP",
+          <GenericCovariates
+            draw={draw}
+            disabled={!description}
+            onResample={() => {
+              const next = crypto.getRandomValues(new Uint32Array(1))[0] % 2 ** 31;
+              setMlpSeed(next === mlpSeed ? (next + 1) % 2 ** 31 : next);
+              invalidate();
+            }}
+          />,
+        )}
         {section(
           "protocol",
           "Dose and observation protocol",
           <>
-            {controls(["dosing"])}
-            {draw && version !== "v1" && (
-              <>
-                <div className="synthetic-dose-editor">
-                  {doseRows.map((event, index) => (
-                    <div className="synthetic-dose-row" key={index}>
-                      <span>Dose {index + 1}</span>
-                      <span>
-                        Time τ{" "}
-                        <NumericEdit
-                          label={`Dose ${index + 1} time`}
-                          value={event.time}
-                          min={0}
-                          max={1 - event.duration}
-                          disabled={busy || index === 0}
-                          onCommit={(value) => {
-                            setDoseEdits(
-                              doseRows.map((e, i) =>
-                                i === index ? { ...e, time: value } : e,
-                              ),
-                            );
-                            invalidate();
-                          }}
-                        />
-                      </span>
-                      <span>
-                        Amount{" "}
-                        <NumericEdit
-                          label={`Dose ${index + 1} amount`}
-                          value={event.amount}
-                          min={0.001}
-                          max={100}
-                          disabled={busy}
-                          onCommit={(value) => {
-                            setDoseEdits(
-                              doseRows.map((e, i) =>
-                                i === index ? { ...e, amount: value } : e,
-                              ),
-                            );
-                            invalidate();
-                          }}
-                        />
-                      </span>
-                      <button
-                        className="icon-button"
-                        aria-label={`Remove dose ${index + 1}`}
-                        disabled={busy || index === 0}
-                        onClick={() => {
-                          setDoseEdits(doseRows.filter((_, i) => i !== index));
-                          invalidate();
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <div className="synthetic-dose-actions">
-                  <label htmlFor="shared-infusion-duration">
-                    Shared infusion duration (0 = bolus)
-                    <NumericEdit
-                      id="shared-infusion-duration"
-                      label="Shared infusion duration"
-                      value={doseRows[0]?.duration ?? 0}
-                      min={0}
-                      max={1 - Math.max(...doseRows.map((e) => e.time))}
-                      disabled={busy}
-                      onCommit={(value) => {
-                        setDoseEdits(
-                          doseRows.map((e) => ({ ...e, duration: value })),
-                        );
-                        invalidate();
-                      }}
-                    />
-                  </label>
-                  <button
-                    className="secondary-button"
-                    disabled={
-                      busy ||
-                      doseRows.length >= 8 ||
-                      (doseRows.at(-1)?.time ?? 0) +
-                        (doseRows[0]?.duration ?? 0) >=
-                        1
-                    }
-                    onClick={() => {
-                      const duration = doseRows[0]?.duration ?? 0;
-                      const last = doseRows.at(-1)?.time ?? 0;
-                      setDoseEdits([
-                        ...doseRows,
-                        {
-                          time: last + (1 - duration - last) / 2,
-                          amount: 1,
-                          duration,
-                        },
-                      ]);
-                      invalidate();
-                    }}
-                  >
-                    + Add dose
-                  </button>
-                  <button
-                    className="secondary-button"
-                    disabled={busy}
-                    onClick={() => {
-                      setDoseEdits([{ time: 0, amount: 1, duration: 0 }]);
-                      invalidate();
-                    }}
-                  >
-                    Single unit bolus
-                  </button>
-                </div>
-              </>
-            )}
-            <div className="synthetic-schedule-controls">
+            {version === "v1" && controls(["dosing"])}
+            <div className="synthetic-schedule-controls synthetic-protocol-controls">
+              <button
+                className="synthetic-resample-grid"
+                disabled={!description}
+                onClick={() => { setGridSeed((value) => value + 1); invalidate(); }}
+              >Resample grid</button>
               <label>
                 Observation schedule
                 <select
-                  disabled={busy}
+                  disabled={!description}
                   value={schedule}
                   onChange={(e) => {
                     setSchedule(e.target.value);
@@ -845,7 +725,7 @@ export function SyntheticStudyBuilder({
               <label>
                 Time weighting
                 <select
-                  disabled={busy || schedule === "unscheduled"}
+                  disabled={!description || schedule === "unscheduled"}
                   value={shape}
                   onChange={(e) => {
                     setShape(e.target.value);
@@ -859,16 +739,7 @@ export function SyntheticStudyBuilder({
                   ))}
                 </select>
               </label>
-              <button
-                className="secondary-button"
-                disabled={busy || schedule === "exact"}
-                onClick={() => {
-                  setGridSeed((v) => v + 1);
-                  invalidate();
-                }}
-              >
-                Resample observation grid
-              </button>
+
             </div>
             {draw && (
               <>
@@ -882,28 +753,68 @@ export function SyntheticStudyBuilder({
                     s.points.map(([t]) => t),
                   )}
                 />
-                <ValueTable
-                  value={{
-                    "Reference dose events": draw.study.doseEvents,
-                    "Individual dose events": Object.fromEntries(
-                      draw.study.subjects.map((s, i) => [i + 1, s.doseEvents]),
-                    ),
-                  }}
-                />
               </>
             )}
-            <p>
-              Observations are subsets of the canonical 128-point bases, with
-              the terminal observation retained. This view shows one source
-              cohort, not the five counterfactual arms of a corpus family.
-            </p>
+            {draw && version !== "v1" && (
+              <div className="synthetic-dose-editor">
+                <table className="synthetic-dose-table">
+                  <thead><tr><th>Dose</th><th>Amount</th><th>Time τ</th><th>Infusion Δt</th><th aria-label="Remove dose" /></tr></thead>
+                  <tbody>
+                    {doseRows.map((event, index) => (
+                      <tr key={index}>
+                        <th scope="row">{index + 1}</th>
+                        {(["amount", "time", "duration"] as const).map((field) => (
+                          <td key={field}>
+                            <NumericEdit
+                              label={`Dose ${index + 1} ${field === "duration" ? "infusion duration" : field}`}
+                              value={event[field]}
+                              min={field === "amount" ? 0.001 : 0}
+                              max={field === "amount" ? 100 : field === "time" ? 1 - event.duration : 1 - event.time}
+                              disabled={!description || (field === "time" && index === 0)}
+                              onCommit={(value) => {
+                                setDoseEdits(doseRows.map((e, i) => i === index ? { ...e, [field]: value } : e));
+                                invalidate();
+                              }}
+                            />
+                          </td>
+                        ))}
+                        <td className="synthetic-dose-remove-cell">
+                          {index > 0 && <button
+                            className="synthetic-dose-remove"
+                            aria-label={`Remove dose ${index + 1}`}
+                            onClick={() => {
+                              setDoseEdits(doseRows.filter((_, i) => i !== index));
+                              invalidate();
+                            }}
+                          >×</button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="synthetic-dose-actions">
+                  <button
+                    className="secondary-button"
+                    disabled={!description || doseRows.length >= 8 || (doseRows.at(-1)?.time ?? 0) >= 1}
+                    onClick={() => {
+                      const last = doseRows.at(-1)?.time ?? 0;
+                      setDoseEdits([...doseRows, { time: last + (1 - last) / 2, amount: 1, duration: 0 }]);
+                      invalidate();
+                    }}
+                  >
+                    + Add dose
+                  </button>
+                </div>
+              </div>
+            )}
+
           </>,
         )}
         {censoringControls &&
           section(
             "censoring",
             "Data censoring",
-            censoringControls(() => setCensorEdited(true)),
+            censoringControls,
           )}
         {section(
           "configuration",
@@ -923,13 +834,7 @@ export function SyntheticStudyBuilder({
                 }}
               />
             )}
-            <button
-              className="secondary-button"
-              disabled={busy}
-              onClick={() => void run(true)}
-            >
-              Reset to canonical defaults
-            </button>
+
           </>,
         )}
       </div>

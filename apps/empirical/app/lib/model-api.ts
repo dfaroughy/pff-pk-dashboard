@@ -24,7 +24,7 @@ export type InferenceResponse = {
   vpc: {
     method: "mesh_bootstrap" | "pharmpy"; // Accept archived responses during rollout.
     methodVersion?: string;
-    timeBinning?: "query_mesh";
+    timeBinning?: "query_mesh" | "equal_number";
     generatedIndividuals: number;
     simulatedCohortReplicates: number;
     requestedBins?: number;

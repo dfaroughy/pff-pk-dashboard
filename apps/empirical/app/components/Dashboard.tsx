@@ -2,7 +2,7 @@
 import { applySyntheticCensoring, drawCensoring, withAssayMetadata } from "../lib/censoring";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { runInference, serviceStatus, type InferenceResponse, type ModelId, type ServiceStatus } from "../lib/model-api";
+import { runInference, serviceStatus, syntheticRequest, type InferenceResponse, type ModelId, type ServiceStatus } from "../lib/model-api";
 import { contextDoseRatio, doseEventDraft, observedProtocol, studyHorizon, validateDoseProtocol, validateInteger, type DoseEventDraft } from "../lib/protocol";
 import { MAX_UPLOAD_BYTES, parsePkDataset, type UploadRoute } from "../lib/pk-upload";
 import { dashboardRuntimeConfig } from "../lib/runtime-config";
@@ -417,7 +417,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
 function InactiveModelPanel({ stale = false }: { stale?: boolean }) {
   return <section className="model-panel model-action-rail inactive-model-panel">
     <div className="model-action-row">
-      <div className="model-action-identity"><h2>Prior-fitted flows</h2><span className="status">{stale ? "Cohort changed" : "Awaiting cohort"}</span></div>
+      <div className="model-action-identity"><h2>Prior-fitted flows</h2>{!stale && <span className="status">Awaiting cohort</span>}</div>
       <div className="inference-actions"><button type="button" className="primary-button inference-progress" disabled><span className="inference-progress-label">Run model</span></button></div>
       <label className="model-select">Model
         <select aria-label="Inactive model selection" value="pythia" disabled><option>Pythia</option></select>
@@ -427,7 +427,6 @@ function InactiveModelPanel({ stale = false }: { stale?: boolean }) {
         <label>Seed <input type="number" value="43" disabled readOnly /></label>
       </div>
     </div>
-    <p className="model-warning">{stale ? "Generate the edited cohort to reactivate zero-shot inference." : "Generate the synthetic cohort to activate zero-shot inference."}</p>
   </section>;
 }
 
@@ -476,8 +475,62 @@ function VpcCaption({ study, result }: {
   return <p className="plot-caption">
     Visual predictive check for {study.drug} with N={study.subjects.length} observed and N={result.generatedConcentration.length} generated individuals. The observed median is magenta and its 5th and 95th percentiles are cyan. {result.vpc.method === "mesh_bootstrap"
       ? "Shaded regions approximate 90% intervals for cohort percentiles by resampling generated curves with replacement at the observed schedules; they are conditional on this finite pool."
-      : "Shaded regions use the archived VPC procedure; rerun with the updated service for design-matched bootstrap intervals."} Empirical percentiles coincide where only one individual was observed.
+      : result.vpc.methodVersion === "pharmpy-binned-bootstrap-v1"
+      ? `Pharmpy uses ${result.vpc.effectiveBins} time bins and 90% intervals from cohort resampling, conditional on the generated pool.`
+      : "Shaded regions use the archived VPC procedure; rerun with the updated service for design-matched bootstrap intervals."}
   </p>;
+}
+
+export function VpcPanel({ study, result, logY, onLogY }: {
+  study: Study; result: InferenceResponse | null; logY: boolean; onLogY: (value: boolean) => void;
+}) {
+  const [numBins, setNumBins] = useState<number | undefined>();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [autoBins, setAutoBins] = useState<number | undefined>();
+  const [rebinned, setRebinned] = useState<{ source: InferenceResponse; bins: number; vpc: InferenceResponse["vpc"] } | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!result || numBins === undefined) return;
+    const abort = new AbortController();
+    const timer = setTimeout(() => {
+      setError("");
+      void syntheticRequest<InferenceResponse["vpc"]>({
+        action: "vpc", study, numBins,
+        queryTime: result.queryTime, generatedConcentration: result.generatedConcentration,
+      }, abort.signal).then(vpc => {
+        if (!abort.signal.aborted) setRebinned({ source: result, bins: numBins, vpc });
+      }).catch(reason => {
+        if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : "VPC rebinning failed");
+      });
+    }, 250);
+    return () => { clearTimeout(timer); abort.abort(); };
+  }, [study, result, numBins]);
+  const displayed = result && numBins !== undefined
+    ? { ...result, vpc: rebinned?.source === result && rebinned.bins === numBins ? rebinned.vpc : { ...result.vpc, points: [] } }
+    : result;
+  const first = study.subjects[0]?.points ?? [];
+  const shared = study.subjects.every(s => s.points.length === first.length && s.points.every(([t], i) => t === first[i][0]));
+  const defaultBins = result?.vpc.effectiveBins ?? autoBins ?? (shared ? first.length : Math.max(1, Math.min(8, Math.floor(study.subjects.reduce((n, s) => n + s.points.length, 0) / 10))));
+  return <article className="card chart-card">
+    <div className="card-heading"><h2>VPC</h2><div className="chart-actions">
+      {study.subjects.length > 0 && <label className="vpc-bin-control">num_bins=
+        <input aria-label="VPC number of bins" type="number" min="1" max="100" step="1"
+          value={draft ?? numBins ?? defaultBins}
+          onChange={event => {
+            const text = event.target.value;
+            setDraft(text);
+            const count = Number(text);
+            if (text.trim() && Number.isInteger(count) && count >= 1 && count <= 100) setNumBins(count);
+          }} onBlur={() => setDraft(null)} />
+      </label>}
+      <VpcLegend result={displayed} empiricalVpc={study.subjects.length > 0} />
+      <PlotScaleToggle logY={logY} onChange={onLogY} plot="VPC" />
+    </div></div>
+    {displayed ? <ModelVpcChart result={displayed} study={study} logY={logY} showEmpirical />
+      : <VpcChart study={study} logY={logY} numBins={numBins} onBins={setAutoBins} />}
+    {error && <p className="field-error" role="alert">{error}</p>}
+    <VpcCaption study={study} result={displayed} />
+  </article>;
 }
 
 function IndividualsCaption({ study, result }: {
@@ -522,7 +575,6 @@ export function Dashboard() {
     if (assayLimit !== null) setAssayLimit(maximum / ratio);
     setModelResult(null);
   };
-  const empiricalVpc = (activeStudy?.subjects.length ?? 0) > 0;
   const modelLabel = modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
   return <div className="dashboard-shell" data-theme={darkMode ? "dark" : "light"}>
     <header className="topbar">
@@ -560,15 +612,12 @@ export function Dashboard() {
         {activeStudy ? <>
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">
-              <div className="card-heading"><h2>Individuals</h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}<i className="blue-line" />Study</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
+              <div className="card-heading"><h2>Individuals <span className="individual-count">N={activeStudy.subjects.length}</span></h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}<i className="blue-line" />Study</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
               {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} showLatent={showLatent && syntheticMode} />}
+              {modelResult && <p className="assay-caption">Generated individuals use the context patients’ observation schedules, repeated across the generated cohort.</p>}
               <IndividualsCaption study={activeStudy} result={modelResult} />
             </article>
-            <article className="card chart-card">
-              <div className="card-heading"><h2>VPC</h2><div className="chart-actions"><VpcLegend result={modelResult} empiricalVpc={empiricalVpc} /><PlotScaleToggle logY={vpcLogY} onChange={setVpcLogY} plot="VPC" /></div></div>
-              {modelResult ? <ModelVpcChart result={modelResult} study={activeStudy} logY={vpcLogY} showEmpirical /> : <VpcChart study={activeStudy} logY={vpcLogY} />}
-              <VpcCaption study={activeStudy} result={modelResult} />
-            </article>
+            <VpcPanel key={activeStudy.id} study={activeStudy} result={modelResult} logY={vpcLogY} onLogY={setVpcLogY} />
             <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
               <PkDistributionChart study={activeStudy} result={modelResult} />
             </article>
@@ -578,15 +627,14 @@ export function Dashboard() {
           <SyntheticStudyBuilder
             key={syntheticVersion}
             version={syntheticVersion}
-            censoringControls={(onEdit) => <>
+            censoringControls={<>
               <div className="synthetic-protocol-heading"><div className="synthetic-schedule-controls">
                 <label>Censoring <select aria-label="Censoring enabled" value={assayLimit === null ? "false" : "true"} onChange={(e) => {
-                  onEdit();
                   const maximum = Math.max(...(syntheticStudy?.subjects.flatMap((s) => s.points.map(([, c]) => c)) ?? [0]));
                   setAssayLimit(e.target.value === "true" && maximum > 0 ? maximum / sensitivity : null);
                   setModelResult(null);
                 }}><option value="false">False</option><option value="true">True</option></select></label>
-                <label>Cmax / LLOQ <input aria-label="Assay sensitivity" type="number" min="1" max="10000" value={sensitivity} onChange={(e) => { onEdit(); setAssaySensitivity(Number(e.target.value)); }} /></label>
+                <label>Cmax / LLOQ <input aria-label="Assay sensitivity" type="number" min="1" max="10000" value={sensitivity} onChange={(e) => { setAssaySensitivity(Number(e.target.value)); }} /></label>
                 <label>Latent curves <select aria-label="Show latent curves" value={String(showLatent)} onChange={(e) => setShowLatent(e.target.value === "true")}><option value="false">Hidden</option><option value="true">Visible</option></select></label>
               </div></div>
             </>}

@@ -11,3 +11,7 @@ pandas>=2.2,<4
 pyyaml>=6,<7
 scipy==1.17.1
 torch==2.8.0+cpu
+
+# Irregular-schedule VPC binning and the shared evaluation adapter.
+pharmpy-core==2.1.0
+matplotlib>=3.8

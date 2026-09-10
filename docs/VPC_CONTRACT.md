@@ -47,3 +47,30 @@ Python resampling is implemented only in `pff_pk.metrics.mesh_vpc`; the dashboar
 imports it. Browser-side observed order statistics are inexpensive descriptive
 calculations with explicit contract tests. PK box-plot quantiles retain their
 existing interpolated convention and are not VPC statistics.
+
+## Individual trajectory display
+
+The inference pool is evaluated on the union of context times so every observed
+schedule is available for VPC resampling. Individual trajectory plots and their
+descriptive PK quantities project each generated curve onto one context patient’s
+schedule, cycling through patients in display order. They select existing model
+values (allowing float32 time roundoff), without interpolation. Thus an irregular
+8-observation design does not become a union-sized observation series for every
+generated patient. The full pool and VPC statistics remain unchanged.
+
+## Automatic irregular-schedule VPC
+
+Identical per-patient schedules retain mesh-bootstrap-v1. Irregular and
+pseudo-scheduled observations use pharmpy-binned-bootstrap-v1: Pharmpy’s existing
+equal-number, tie-preserving VPC implementation computes observed 5/50/95%
+quantiles and 90% confidence intervals from 200 design-matched simulated cohorts.
+Each replicate samples whole curves with replacement, then selects each patient's
+original observation rows. Observed and simulated values use identical bins.
+The bin budget is min(8, floor(number of observations / 10)), at least one;
+Pharmpy's nonempty-bin check can reduce it further. This is a display default,
+not a claim that ten observations adequately estimate tail quantiles.
+Intervals remain conditional on the finite generated pool.
+
+The observed-only preview uses the same Pharmpy binning and observed statistics.
+Inference cache identity includes auto-pharmpy-bootstrap-v1 so historical
+unbinned irregular results are not reused. Binned interval bands connect bin-center statistics with straight segments for display.

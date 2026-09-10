@@ -39,7 +39,7 @@ from pff_pk.inference.empirical import (  # noqa: E402
 )
 from pff_pk.inference.model import load_inference_model  # noqa: E402
 
-from pff_pk.metrics.mesh_vpc import MESH_VPC_VERSION, mesh_vpc_summary  # noqa: E402
+from pff_pk.metrics.dashboard_vpc import DASHBOARD_VPC_VERSION, dashboard_vpc_summary  # noqa: E402
 
 DEFAULT_CONFIG = PFF_ROOT / "configs" / "amarel_v6_protocol_counterfactual_phase2_sparse.yaml"
 DEFAULT_CHECKPOINT = (
@@ -399,7 +399,7 @@ class ModelRuntime:
                 physical = inverse_concentration(normalized, repeated).float().cpu().numpy()
             chunks.append(physical[..., 0])
         samples = np.concatenate(chunks, axis=0)
-        vpc = mesh_vpc_summary(
+        vpc = dashboard_vpc_summary(
             samples,
             query_time,
             cohort,
@@ -497,7 +497,7 @@ def cached_inference(request: dict[str, Any]) -> dict[str, Any]:
     runtime.load()
     cache_key = {
         "schemaVersion": 4,
-        "vpcVersion": MESH_VPC_VERSION,
+        "vpcVersion": DASHBOARD_VPC_VERSION,
         "request": request,
         "checkpointSha256": runtime.checkpoint_sha256,
         "configSha256": hashlib.sha256(runtime.config_path.read_bytes()).hexdigest(),

@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { generatedObservationCurves } from "../lib/generated-observations";
 import { observedVpc, pkEstimatesFromPoints, quantile } from "../lib/pk";
-import type { InferenceResponse } from "../lib/model-api";
-import type { Point, Study } from "../lib/types";
+import { syntheticRequest, type InferenceResponse } from "../lib/model-api";
+import type { Point, Study, VpcPoint } from "../lib/types";
 
 const WIDTH = 720;
 const HEIGHT = 445;
@@ -104,14 +105,28 @@ export function TrajectoryChart({ study, logY, showLatent = false }: { study: St
   return <Chart assay={study.assay} flagged={flagged} series={[...latent, ...series]} styles={[...latent.map(() => ({ stroke: "var(--trajectory-blue)", opacity: 0.35, dash: "4 3" })), ...series.map(() => ({ stroke: "var(--trajectory-blue)", width: 1, opacity: study.subjects.length ? 0.72 : 1, markers: true, radius: 1.9 }))]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Concentration trajectories for ${study.drug}`} />;
 }
 
-export function VpcChart({ study, logY }: { study: Study; logY: boolean }) {
+export function VpcChart({ study, logY, numBins, onBins }: { study: Study; logY: boolean; numBins?: number; onBins?: (bins: number) => void }) {
+  const [binned, setBinned] = useState<{ study: Study; numBins?: number; points: VpcPoint[] } | null>(null);
+  const firstTimes = study.subjects[0]?.points.map(([t]) => t) ?? [];
+  const irregular = study.subjects.some((s) => s.points.length !== firstTimes.length || s.points.some(([t], i) => t !== firstTimes[i]));
+  useEffect(() => {
+    if (!study.subjects.length || (!irregular && numBins === undefined)) return;
+    const abort = new AbortController();
+    void syntheticRequest<{ points: VpcPoint[]; effectiveBins: number }>({ action: "vpc", study, ...(numBins === undefined ? {} : { numBins }) }, abort.signal)
+      .then((result) => { if (!abort.signal.aborted) {
+        setBinned({ study, numBins, points: result.points });
+        onBins?.(result.effectiveBins);
+      } })
+      .catch(() => { /* Keep unavailable statistics empty instead of showing an unbinned VPC. */ });
+    return () => abort.abort();
+  }, [study, irregular, numBins, onBins]);
   if (!study.subjects.length) {
     const mean = study.summary.map((point) => [point.time, point.mean] as Point);
     const lower = study.summary.map((point) => [point.time, Math.max(point.mean - (point.sd ?? 0), 1e-30)] as Point);
     const upper = study.summary.map((point) => [point.time, point.mean + (point.sd ?? 0)] as Point);
     return <Chart series={[mean]} styles={[{ stroke: "var(--magenta)", width: 1, markers: true, radius: 2.2 }]} bands={[{ lower, upper, fill: "var(--blue-summary-fill)" }]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Published concentration summary for ${study.drug}`} />;
   }
-  const vpc = observedVpc(study);
+  const vpc = irregular || numBins !== undefined ? (binned?.study === study && binned.numBins === numBins ? binned.points : []) : observedVpc(study);
   const q05 = vpc.map((point) => [point.time, point.q05] as Point);
   const q50 = vpc.map((point) => [point.time, point.q50] as Point);
   const q95 = vpc.map((point) => [point.time, point.q95] as Point);
@@ -124,7 +139,7 @@ export function VpcChart({ study, logY }: { study: Study; logY: boolean }) {
 
 export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { result: InferenceResponse; study: Study; logY: boolean; showEmpirical: boolean }) {
   const empirical = showEmpirical ? study.subjects.map((subject) => subject.points) : [];
-  const generated = result.generatedConcentration.map((values) => result.queryTime.map((time, index) => [time, values[index]] as Point));
+  const generated = generatedObservationCurves(result, study);
   return <Chart
     assay={study.assay}
     flagged={showEmpirical ? censoringMarkers(study) : []}
@@ -142,7 +157,7 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { r
 
 export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: InferenceResponse; study: Study; logY: boolean; showEmpirical: boolean }) {
   const model = result.vpc.points;
-  const observed = result.vpc.method === "mesh_bootstrap"
+  const observed = result.vpc.method === "mesh_bootstrap" || result.vpc.methodVersion === "pharmpy-binned-bootstrap-v1"
     ? model.map((entry) => ({ time: entry.time, n: entry.nObservations, ...entry.observed }))
     : observedVpc(study);
   const empiricalSeries = showEmpirical ? [
@@ -221,13 +236,13 @@ export function PkDistributionChart({ study, result }: { study: Study; result: I
       observedDose,
       study.doseUnit,
     ));
-    const generated = result?.generatedConcentration.map((values) => pkEstimatesFromPoints(
-      result.queryTime.map((time, index) => [time, values[index]] as Point),
+    const generated = result ? generatedObservationCurves(result, study).map((points) => pkEstimatesFromPoints(
+      points,
       result.units.concentration,
       result.units.time,
       generatedDose,
       result.request.doseEvents[0]?.unit ?? study.doseUnit,
-    )) ?? [];
+    )) : [];
     const template = observed[0] ?? generated[0] ?? [];
     return template.map((metric, metricIndex) => ({
       ...metric,

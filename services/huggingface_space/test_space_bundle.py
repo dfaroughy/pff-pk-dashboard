@@ -33,7 +33,7 @@ class SpaceSourceTests(unittest.TestCase):
         self.assertIn("torch==2.8.0+cpu", requirements)
         self.assertIn("gradio[oauth,mcp]==6.2.0", requirements)
         self.assertIn("spaces", requirements)
-        self.assertNotIn("pharmpy-core", requirements)
+        self.assertIn("pharmpy-core==2.1.0", requirements)
 
     def test_public_solver_is_fixed(self) -> None:
         tree = ast.parse((self.root / "app.py").read_text(encoding="utf-8"))

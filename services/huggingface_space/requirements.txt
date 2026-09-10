@@ -11,6 +11,10 @@ aiohttp==3.14.3
     # via fsspec
 aiosignal==1.4.0
     # via aiohttp
+alabaster==1.0.0
+    # via sphinx
+altair==6.2.2
+    # via pharmpy-core
 annotated-doc==0.0.5
     # via
     #   fastapi
@@ -24,6 +28,10 @@ anyio==4.15.1
     #   mcp
     #   sse-starlette
     #   starlette
+appdirs==1.4.4
+    # via pharmpy-core
+asttokens==3.0.2
+    # via stack-data
 attrs==26.1.0
     # via
     #   aiohttp
@@ -31,6 +39,14 @@ attrs==26.1.0
     #   referencing
 authlib==1.8.0
     # via gradio
+babel==2.18.0
+    # via sphinx
+beautifulsoup4==4.15.0
+    # via
+    #   nbconvert
+    #   pharmpy-core
+bleach==6.4.0
+    # via nbconvert
 brotli==1.2.0
     # via gradio
 certifi==2026.7.22
@@ -44,27 +60,68 @@ charset-normalizer==3.5.1
     # via requests
 click==8.5.0
     # via
+    #   dask
+    #   distributed
     #   huggingface-hub
     #   uvicorn
+cloudpickle==3.1.2
+    # via
+    #   dask
+    #   distributed
+comm==0.2.3
+    # via
+    #   ipykernel
+    #   ipywidgets
+contourpy==1.3.3
+    # via matplotlib
 cryptography==50.0.1
     # via
     #   authlib
     #   joserfc
     #   pyjwt
+csscompressor==0.9.5
+    # via pharmpy-core
+cycler==0.12.1
+    # via matplotlib
+dask==2026.8.0
+    # via
+    #   distributed
+    #   pharmpy-core
+debugpy==1.8.21
+    # via ipykernel
+defusedxml==0.7.1
+    # via nbconvert
+distributed==2026.8.0
+    # via pharmpy-core
+docutils==0.22.4
+    # via sphinx
+executing==2.2.1
+    # via stack-data
 fastapi==0.141.1
     # via gradio
+fastjsonschema==2.22.2
+    # via nbformat
 ffmpy==1.0.0
     # via gradio
 filelock==3.32.5
     # via
     #   huggingface-hub
     #   torch
+flexcache==0.3
+    # via pint
+flexparser==0.4
+    # via pint
+fonttools==4.64.0
+    # via matplotlib
+formulaic==1.2.2
+    # via statsmodels
 frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
 fsspec==2026.7.0
     # via
+    #   dask
     #   gradio-client
     #   huggingface-hub
     #   lightning
@@ -107,18 +164,68 @@ idna==3.19
     #   httpx
     #   requests
     #   yarl
+imagesize==2.0.1
+    # via sphinx
+interface-meta==2.0.1
+    # via formulaic
+ipykernel==7.3.0
+    # via
+    #   jupyter-sphinx
+    #   pharmpy-core
+ipython==9.17.1
+    # via
+    #   ipykernel
+    #   ipywidgets
+    #   jupyter-sphinx
+ipython-pygments-lexers==1.1.1
+    # via ipython
+ipywidgets==8.1.9
+    # via jupyter-sphinx
+itables==2.9.1
+    # via pharmpy-core
 itsdangerous==2.2.0
     # via gradio
+jedi==0.20.0
+    # via ipython
 jinja2==3.1.6
     # via
+    #   altair
+    #   distributed
     #   gradio
+    #   nbconvert
+    #   sphinx
     #   torch
 joserfc==1.7.5
     # via authlib
 jsonschema==4.26.0
-    # via mcp
+    # via
+    #   altair
+    #   mcp
+    #   nbformat
+    #   pharmpy-core
 jsonschema-specifications==2025.9.1
     # via jsonschema
+jupyter-client==8.10.0
+    # via
+    #   ipykernel
+    #   nbclient
+jupyter-core==5.9.1
+    # via
+    #   ipykernel
+    #   jupyter-client
+    #   nbclient
+    #   nbconvert
+    #   nbformat
+jupyter-sphinx==0.5.3
+    # via pharmpy-core
+jupyterlab-pygments==0.3.0
+    # via nbconvert
+jupyterlab-widgets==3.0.17
+    # via ipywidgets
+kiwisolver==1.5.1
+    # via matplotlib
+lark==1.3.1
+    # via pharmpy-core
 lightning==2.6.5
     # via -r services/huggingface_space/requirements.in
 lightning-utilities==0.15.3
@@ -126,53 +233,139 @@ lightning-utilities==0.15.3
     #   lightning
     #   pytorch-lightning
     #   torchmetrics
+locket==1.0.0
+    # via
+    #   distributed
+    #   partd
+lxml==6.1.3
+    # via pharmpy-core
 markdown-it-py==4.2.0
     # via rich
 markupsafe==3.0.3
     # via
     #   gradio
     #   jinja2
+    #   nbconvert
+matplotlib==3.11.1
+    # via -r services/huggingface_space/requirements.in
+matplotlib-inline==0.2.2
+    # via
+    #   ipykernel
+    #   ipython
 mcp==1.30.0
     # via gradio
 mdurl==0.1.2
     # via markdown-it-py
+mistune==3.3.4
+    # via nbconvert
 mpmath==1.3.0
     # via sympy
+msgpack==1.2.2
+    # via distributed
 multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
+narwhals==2.26.0
+    # via
+    #   altair
+    #   formulaic
+nbclient==0.11.0
+    # via nbconvert
+nbconvert==7.17.1
+    # via jupyter-sphinx
+nbformat==5.11.1
+    # via
+    #   jupyter-sphinx
+    #   nbclient
+    #   nbconvert
+nest-asyncio2==1.7.2
+    # via ipykernel
 networkx==3.6.1
-    # via torch
+    # via
+    #   pharmpy-core
+    #   torch
+numexpr==2.14.2
+    # via pharmpy-core
 numpy==2.5.3
     # via
     #   -r services/huggingface_space/requirements.in
+    #   contourpy
+    #   formulaic
     #   gradio
+    #   matplotlib
+    #   numexpr
     #   pandas
+    #   patsy
+    #   pharmpy-core
     #   scipy
+    #   statsmodels
     #   torchmetrics
 orjson==3.12.0
     # via gradio
 packaging==26.3
     # via
+    #   altair
+    #   dask
+    #   distributed
     #   gradio
     #   gradio-client
     #   huggingface-hub
+    #   ipykernel
     #   lightning
     #   lightning-utilities
+    #   matplotlib
+    #   nbconvert
+    #   patsy
     #   pytorch-lightning
     #   spaces
+    #   sphinx
+    #   statsmodels
     #   torchmetrics
 pandas==2.3.3
     # via
     #   -r services/huggingface_space/requirements.in
+    #   formulaic
     #   gradio
+    #   pharmpy-core
+    #   statsmodels
+pandocfilters==1.5.1
+    # via nbconvert
+parso==0.8.7
+    # via jedi
+partd==1.4.2
+    # via dask
+patsy==1.0.3
+    # via statsmodels
+pexpect==4.9.0
+    # via ipython
+pharmpy-core==2.1.0
+    # via -r services/huggingface_space/requirements.in
 pillow==12.3.0
-    # via gradio
+    # via
+    #   gradio
+    #   matplotlib
+pint==0.25.3
+    # via pharmpy-core
+platformdirs==4.11.8
+    # via
+    #   jupyter-core
+    #   pint
+prompt-toolkit==3.0.53
+    # via ipython
 propcache==0.5.2
     # via
     #   aiohttp
     #   yarl
+psutil==7.2.2
+    # via
+    #   distributed
+    #   ipykernel
+    #   ipython
+ptyprocess==0.7.0
+    # via pexpect
+pure-eval==0.2.3
+    # via stack-data
 pycparser==3.0
     # via cffi
 pydantic==2.12.5
@@ -189,11 +382,21 @@ pydantic-settings==2.15.0
 pydub==0.25.1
     # via gradio
 pygments==2.21.0
-    # via rich
+    # via
+    #   ipython
+    #   ipython-pygments-lexers
+    #   nbconvert
+    #   rich
+    #   sphinx
 pyjwt==2.13.0
     # via mcp
+pyparsing==3.3.2
+    # via matplotlib
 python-dateutil==2.9.0.post0
-    # via pandas
+    # via
+    #   jupyter-client
+    #   matplotlib
+    #   pandas
 python-dotenv==1.2.3
     # via pydantic-settings
 python-multipart==0.0.32
@@ -207,18 +410,30 @@ pytz==2026.3.post1
 pyyaml==6.0.3
     # via
     #   -r services/huggingface_space/requirements.in
+    #   dask
+    #   distributed
     #   gradio
     #   huggingface-hub
     #   lightning
     #   pytorch-lightning
+pyzmq==27.2.0
+    # via
+    #   ipykernel
+    #   jupyter-client
 referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
 requests==2.34.2
-    # via spaces
+    # via
+    #   spaces
+    #   sphinx
 rich==15.0.0
-    # via typer
+    # via
+    #   pharmpy-core
+    #   typer
+roman-numerals==4.1.0
+    # via sphinx
 rpds-py==2026.6.3
     # via
     #   jsonschema
@@ -226,7 +441,11 @@ rpds-py==2026.6.3
 safehttpx==0.1.7
     # via gradio
 scipy==1.17.1
-    # via -r services/huggingface_space/requirements.in
+    # via
+    #   -r services/huggingface_space/requirements.in
+    #   formulaic
+    #   pharmpy-core
+    #   statsmodels
 semantic-version==2.10.0
     # via gradio
 setuptools==84.0.0
@@ -235,20 +454,59 @@ shellingham==1.5.4
     # via typer
 six==1.17.0
     # via python-dateutil
+snowballstemmer==3.1.1
+    # via sphinx
+sortedcontainers==2.4.0
+    # via distributed
+soupsieve==2.9.2
+    # via beautifulsoup4
 spaces==0.51.3
     # via -r services/huggingface_space/requirements.in
+sphinx==9.1.0
+    # via
+    #   jupyter-sphinx
+    #   pharmpy-core
+sphinxcontrib-applehelp==2.0.0
+    # via sphinx
+sphinxcontrib-devhelp==2.0.0
+    # via sphinx
+sphinxcontrib-htmlhelp==2.1.0
+    # via sphinx
+sphinxcontrib-jsmath==1.0.1
+    # via sphinx
+sphinxcontrib-qthelp==2.0.0
+    # via sphinx
+sphinxcontrib-serializinghtml==2.0.0
+    # via sphinx
 sse-starlette==3.4.11
     # via mcp
+stack-data==0.6.3
+    # via ipython
 starlette==0.52.1
     # via
     #   fastapi
     #   gradio
     #   mcp
     #   sse-starlette
+statsmodels==0.15.0
+    # via pharmpy-core
+symengine==0.14.1
+    # via pharmpy-core
 sympy==1.14.0
-    # via torch
+    # via
+    #   pharmpy-core
+    #   torch
+tblib==3.2.2
+    # via distributed
+tinycss2==1.5.1
+    # via bleach
 tomlkit==0.13.3
     # via gradio
+toolz==1.1.0
+    # via
+    #   dask
+    #   distributed
+    #   partd
 torch==2.8.0+cpu
     # via
     #   -r services/huggingface_space/requirements.in
@@ -259,25 +517,48 @@ torchmetrics==1.9.0
     # via
     #   lightning
     #   pytorch-lightning
+tornado==6.5.8
+    # via
+    #   distributed
+    #   ipykernel
+    #   jupyter-client
 tqdm==4.70.0
     # via
     #   huggingface-hub
     #   lightning
     #   pytorch-lightning
+traitlets==5.16.1
+    # via
+    #   ipykernel
+    #   ipython
+    #   ipywidgets
+    #   jupyter-client
+    #   jupyter-core
+    #   matplotlib-inline
+    #   nbclient
+    #   nbconvert
+    #   nbformat
 typer==0.27.2
     # via gradio
 typing-extensions==4.16.0
     # via
     #   aiohttp
     #   aiosignal
+    #   altair
     #   anyio
+    #   beautifulsoup4
     #   fastapi
+    #   flexcache
+    #   flexparser
+    #   formulaic
     #   gradio
     #   gradio-client
     #   huggingface-hub
+    #   jupyter-client
     #   lightning
     #   lightning-utilities
     #   mcp
+    #   pint
     #   pydantic
     #   pydantic-core
     #   pytorch-lightning
@@ -301,7 +582,19 @@ uvicorn==0.52.4
     #   -r services/huggingface_space/requirements.in
     #   gradio
     #   mcp
+wcwidth==0.8.3
+    # via prompt-toolkit
+webencodings==0.6.1
+    # via
+    #   bleach
+    #   tinycss2
 websockets==17.1
     # via -r services/huggingface_space/requirements.in
+widgetsnbextension==4.0.16
+    # via ipywidgets
+wrapt==2.4.0
+    # via formulaic
 yarl==1.24.5
     # via aiohttp
+zict==3.0.0
+    # via distributed
