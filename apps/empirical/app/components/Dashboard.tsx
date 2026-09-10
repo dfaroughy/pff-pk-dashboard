@@ -373,7 +373,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   };
   return <section className="model-panel model-action-rail">
     <div className="model-action-row">
-      <div className="model-action-identity"><h2>Prior-fitted flows</h2><span className={selectedStatus?.ready ? "status connected" : "status"}>{selectedStatus?.ready ? `CPU · ${selectedStatus.loaded ? "model loaded" : "ready"}` : status ? "Checkpoint unavailable" : hosted ? "Waking model…" : "Service offline"}</span></div>
+      <div className="model-action-identity"><h2>Prior-fitted flows</h2></div>
       <div className="inference-actions">
         <button type="button" className="primary-button inference-progress" data-filled={progress >= 50 ? "true" : undefined} aria-label={running ? "Running model" : "Run model"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
           <span className="inference-progress-fill" role="progressbar" aria-label="Inference progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} style={{ width: `${progress}%` }} />
@@ -451,14 +451,14 @@ function VpcLegend({ result, empiricalVpc }: {
   empiricalVpc: boolean;
 }) {
   if (!result) return <span className="legend">
-    <i className="magenta-solid-line" />{empiricalVpc ? "50%" : "Mean"}
-    <i className={empiricalVpc ? "cyan-solid-line" : "blue-band"} />{empiricalVpc ? "5/95%" : "±SD"}
+    <span className="legend-item"><i className="magenta-solid-line" />{empiricalVpc ? "50%" : "Mean"}</span>
+    <span className="legend-item"><i className={empiricalVpc ? "cyan-solid-line" : "blue-band"} />{empiricalVpc ? "5/95%" : "±SD"}</span>
   </span>;
   return <span className="legend">
-    <i className="generated-outer-band" />Pythia 5/95%
-    <i className="generated-median-band" />Pythia 50%
-    <i className="magenta-solid-line" />Study 50%
-    <i className="cyan-solid-line" />Study 5/95%
+    <span className="legend-item"><i className="generated-outer-band" />Pythia 5/95%</span>
+    <span className="legend-item"><i className="generated-median-band" />Pythia 50%</span>
+    <span className="legend-item"><i className="magenta-solid-line" />Study 50%</span>
+    <span className="legend-item"><i className="cyan-solid-line" />Study 5/95%</span>
   </span>;
 }
 
@@ -585,7 +585,7 @@ export function Dashboard() {
     </header>
     <div className="workspace">
       <main className="content">
-        {syntheticMode && <section className="empirical-cohort-bar"><div className="cohort-selector"><label>Synthetic prior
+        {syntheticMode && <section className="empirical-cohort-bar synthetic-prior-selector"><div className="cohort-selector"><label>Synthetic prior
           <select aria-label="Synthetic dataset version" value={syntheticVersion} onChange={e => {
             setSyntheticVersion(e.target.value as SyntheticVersion); setSyntheticStale(true); setModelResult(null);
           }}><option value="v1">v1 · Original linear model</option><option value="v6">v6 · General compartment models</option><option value="v7">v7 · Physiological patients</option></select>
@@ -612,13 +612,13 @@ export function Dashboard() {
         {activeStudy ? <>
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">
-              <div className="card-heading"><h2>Individuals <span className="individual-count">N={activeStudy.subjects.length}</span></h2><div className="chart-actions"><span className="legend">{modelResult && <><i className="red-line" />{modelLabel}</>}<i className="blue-line" />Study</span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
+              <div className="card-heading"><h2>Individuals <span className="individual-count">N={activeStudy.subjects.length}</span></h2><div className="chart-actions"><span className="legend">{modelResult && <><span className="legend-item"><i className="red-line" />{modelLabel}</span></>}<span className="legend-item"><i className="blue-line" />Study</span></span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
               {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} showLatent={showLatent && syntheticMode} />}
               {modelResult && <p className="assay-caption">Generated individuals use the context patients’ observation schedules, repeated across the generated cohort.</p>}
               <IndividualsCaption study={activeStudy} result={modelResult} />
             </article>
             <VpcPanel key={activeStudy.id} study={activeStudy} result={modelResult} logY={vpcLogY} onLogY={setVpcLogY} />
-            <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><i className="blue-line" />Study{modelResult && <><i className="red-line" />{modelLabel}</>}</span></div>
+            <article className="card distribution-card"><div className="section-heading"><h2>PK quantities</h2><span className="legend"><span className="legend-item"><i className="blue-line" />Study</span>{modelResult && <><span className="legend-item"><i className="red-line" />{modelLabel}</span></>}</span></div>
               <PkDistributionChart study={activeStudy} result={modelResult} />
             </article>
           </section>

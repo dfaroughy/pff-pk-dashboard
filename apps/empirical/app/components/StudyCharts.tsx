@@ -1,14 +1,27 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { generatedObservationCurves } from "../lib/generated-observations";
 import { observedVpc, pkEstimatesFromPoints, quantile } from "../lib/pk";
 import { syntheticRequest, type InferenceResponse } from "../lib/model-api";
 import type { Point, Study, VpcPoint } from "../lib/types";
 
 const WIDTH = 720;
-const HEIGHT = 445;
-const MARGIN = { left: 62, right: 22, top: 30, bottom: 52 };
+const HEIGHT = 480;
+const MARGIN = { left: 124, right: 52, top: 44, bottom: 76 };
+
+export function wrapAxisLabel(label: string, limit: number): string[] {
+  const lines: string[] = [];
+  for (const word of label.split(/\s+/)) {
+    for (let offset = 0; offset < word.length; offset += limit) {
+      const part = word.slice(offset, offset + limit);
+      const last = lines.length - 1;
+      if (last >= 0 && lines[last].length + part.length + 1 <= limit) lines[last] += ` ${part}`;
+      else lines.push(part);
+    }
+  }
+  return lines;
+}
 
 function bounds(series: Point[][], logY: boolean) {
   const points = series.flat().filter(([, y]) => y > 0 && Number.isFinite(y));
@@ -44,30 +57,46 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [], as
   flagged?: { point: Point; cens: 1 | null }[];
 }) {
   const clipId = useId().replaceAll(":", "");
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [width, setWidth] = useState(WIDTH);
+  useEffect(() => {
+    if (!svgRef.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) setWidth(Math.min(WIDTH, Math.max(280, Math.round(entry.contentRect.width))));
+    });
+    observer.observe(svgRef.current);
+    return () => observer.disconnect();
+  }, []);
   const domain = bounds([...series, ...bands.flatMap((band) => [band.lower, band.upper]), ...(assay ? [[[0, assay.lloq] as Point]] : [])], logY);
-  const x = (value: number) => MARGIN.left + (value - domain.xMin) / (domain.xMax - domain.xMin) * (WIDTH - MARGIN.left - MARGIN.right);
+  const yTicks = ticks(domain.yMin, domain.yMax);
+  const tickText = (tick: number) => logY ? (10 ** tick).toExponential(1).replace("e+", "e") : tick.toPrecision(3);
+  const left = Math.max(64, ...yTicks.map(t => tickText(t).length * 12 + 16));
+  const titleLines = wrapAxisLabel(yLabel, Math.max(10, Math.floor((width - left - MARGIN.right) / 12)));
+  const marginTop = Math.max(MARGIN.top, titleLines.length * 24 + 16);
+  const height = Math.max(420, width * HEIGHT / WIDTH, marginTop + 220 + MARGIN.bottom);
+  const x = (value: number) => left + (value - domain.xMin) / (domain.xMax - domain.xMin) * (width - left - MARGIN.right);
   const y = (value: number) => {
     const transformed = logY ? Math.log10(Math.max(value, 1e-30)) : value;
-    return HEIGHT - MARGIN.bottom - (transformed - domain.yMin) / (domain.yMax - domain.yMin) * (HEIGHT - MARGIN.top - MARGIN.bottom);
+    return height - MARGIN.bottom - (transformed - domain.yMin) / (domain.yMax - domain.yMin) * (height - marginTop - MARGIN.bottom);
   };
   const path = (points: Point[]) => points.filter(([, value]) => value > 0).map(([time, value], index) => `${index ? "L" : "M"}${x(time).toFixed(2)},${y(value).toFixed(2)}`).join(" ");
   const bandPath = (lower: Point[], upper: Point[]) => `${path(lower)} ${[...upper].reverse().map(([time, value]) => `L${x(time).toFixed(2)},${y(value).toFixed(2)}`).join(" ")} Z`;
-  return <svg className="chart" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={ariaLabel}>
-    <defs><clipPath id={clipId}><rect x={MARGIN.left} y={MARGIN.top} width={WIDTH - MARGIN.left - MARGIN.right} height={HEIGHT - MARGIN.top - MARGIN.bottom} /></clipPath></defs>
-    {ticks(domain.xMin, domain.xMax).map((tick) => <g key={`x-${tick}`}>
-      <line className="gridline" x1={x(tick)} x2={x(tick)} y1={MARGIN.top} y2={HEIGHT - MARGIN.bottom} />
-      <text className="tick" x={x(tick)} y={HEIGHT - 23} textAnchor="middle">{tick.toPrecision(3).replace(/\.00$/, "")}</text>
+  return <svg ref={svgRef} className="chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
+    <defs><clipPath id={clipId}><rect x={left} y={marginTop} width={width - left - MARGIN.right} height={height - marginTop - MARGIN.bottom} /></clipPath></defs>
+    {ticks(domain.xMin, domain.xMax, Math.min(5, Math.max(2, Math.floor((width - left - MARGIN.right) / 100) + 1))).map((tick) => <g key={`x-${tick}`}>
+      <line className="gridline" x1={x(tick)} x2={x(tick)} y1={marginTop} y2={height - MARGIN.bottom} />
+      <text className="tick" x={x(tick)} y={height - 42} textAnchor="middle">{tick.toPrecision(3).replace(/\.00$/, "")}</text>
     </g>)}
-    {ticks(domain.yMin, domain.yMax).map((tick) => {
+    {yTicks.map((tick) => {
       const raw = logY ? 10 ** tick : tick;
       return <g key={`y-${tick}`}>
-        <line className="gridline" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(raw)} y2={y(raw)} />
-        <text className="tick" x={MARGIN.left - 10} y={y(raw) + 4} textAnchor="end">{logY ? raw.toExponential(1).replace("e+", "e") : raw.toPrecision(3)}</text>
+        <line className="gridline" x1={left} x2={width - MARGIN.right} y1={y(raw)} y2={y(raw)} />
+        <text className="tick" x={left - 10} y={y(raw) + 4} textAnchor="end">{tickText(tick)}</text>
       </g>;
     })}
     <g clipPath={`url(#${clipId})`}>
       {bands.map((band, index) => <path key={`band-${index}`} d={bandPath(band.lower, band.upper)} fill={band.fill} />)}
-      {assay && <line x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(assay.lloq)} y2={y(assay.lloq)} stroke="var(--assay-amber)" strokeWidth="1.2" strokeDasharray="6 4" />}
+      {assay && <line x1={left} x2={width - MARGIN.right} y1={y(assay.lloq)} y2={y(assay.lloq)} stroke="var(--assay-amber)" strokeWidth="1.2" strokeDasharray="6 4" />}
       {series.map((points, index) => {
         const style = styles[index] ?? styles[0];
         return <g key={`line-${index}`} opacity={style.opacity ?? 1}>
@@ -77,17 +106,17 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [], as
       })}
     </g>
     {assay && <g className="assay-overlay">
-      <text x={WIDTH - MARGIN.right - 4} y={Math.max(MARGIN.top + 12, y(assay.lloq) - 6)} textAnchor="end" fill="var(--assay-amber)" fontSize="12">LLOQ {assay.lloq.toPrecision(3)}</text>
+      <text x={width - MARGIN.right - 4} y={Math.max(marginTop + 12, y(assay.lloq) - 6)} textAnchor="end" fill="var(--assay-amber)" fontSize="16.8">LLOQ {assay.lloq.toPrecision(3)}</text>
     </g>}
     <g clipPath={`url(#${clipId})`}>{flagged.map(({ point: [t, c], cens }, i) => <g key={i}>
       {cens === 1
         ? <path aria-label="Censored observation" d={`M${x(t)-4},${y(c)-4} L${x(t)+4},${y(c)-4} L${x(t)},${y(c)+3} Z`} fill="var(--assay-amber)" />
         : <circle aria-label="Unresolved censoring" cx={x(t)} cy={y(c)} r="4" fill="none" stroke="var(--assay-amber)" strokeWidth="1.5" />}
     </g>)}</g>
-    <line className="axis" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={HEIGHT - MARGIN.bottom} y2={HEIGHT - MARGIN.bottom} />
-    <line className="axis" x1={MARGIN.left} x2={MARGIN.left} y1={MARGIN.top} y2={HEIGHT - MARGIN.bottom} />
-    <text className="axis-label" x={(MARGIN.left + WIDTH - MARGIN.right) / 2} y={HEIGHT - 4} textAnchor="middle">{xLabel}</text>
-    <text className="axis-label plot-y-title" x={MARGIN.left} y={15} textAnchor="start">{yLabel}</text>
+    <line className="axis" x1={left} x2={width - MARGIN.right} y1={height - MARGIN.bottom} y2={height - MARGIN.bottom} />
+    <line className="axis" x1={left} x2={left} y1={marginTop} y2={height - MARGIN.bottom} />
+    <text className="axis-label" x={(left + width - MARGIN.right) / 2} y={height - 10} textAnchor="middle">{xLabel}</text>
+    <text className="axis-label plot-y-title" x={left} y={24} textAnchor="start">{titleLines.map((line, index) => <tspan key={index} x={left} dy={index ? 24 : 0}>{line}</tspan>)}</text>
   </svg>;
 }
 
@@ -183,12 +212,8 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
   />;
 }
 
-const DISTRIBUTION_COLUMNS = 3;
-const DISTRIBUTION_WIDTH = 720;
-const DISTRIBUTION_ROW_HEIGHT = 250;
-const DISTRIBUTION_HEIGHT = DISTRIBUTION_ROW_HEIGHT * 2;
-const DISTRIBUTION_TOP = 52;
-const DISTRIBUTION_BOTTOM = 210;
+const DISTRIBUTION_TOP = 70;
+const DISTRIBUTION_BOTTOM = 240;
 
 function compactNumber(value: number) {
   const magnitude = Math.abs(value);
@@ -200,7 +225,9 @@ function MetricSymbol({ symbol }: { symbol: string }) {
   const split = symbol === "Cmax" ? ["C", "max"]
     : symbol === "Tmax" ? ["T", "max"]
       : symbol === "AUClast" ? ["AUC", "last"]
-        : null;
+        : symbol === "λz" ? ["λ", "z"]
+          : symbol === "t½" ? ["t", "1/2"]
+            : null;
   if (!split) return <>{symbol}</>;
   return <>{split[0]}<tspan baselineShift="sub" fontSize="65%">{split[1]}</tspan></>;
 }
@@ -250,41 +277,35 @@ export function PkDistributionChart({ study, result }: { study: Study; result: I
       generated: generated.map((profile) => profile[metricIndex]?.value).filter((value): value is number => typeof value === "number" && Number.isFinite(value)),
     }));
   }, [result, study]);
-  const panelWidth = DISTRIBUTION_WIDTH / DISTRIBUTION_COLUMNS;
 
-  return <svg className="pk-distribution-chart" viewBox={`0 0 ${DISTRIBUTION_WIDTH} ${DISTRIBUTION_HEIGHT}`} role="img" aria-label="Distributions of observed and Pythia-PK pharmacokinetic quantities">
-    <title>Observed and Pythia-PK distributions of descriptive pharmacokinetic quantities</title>
-    <line className="distribution-separator" x1="0" x2={DISTRIBUTION_WIDTH} y1={DISTRIBUTION_ROW_HEIGHT} y2={DISTRIBUTION_ROW_HEIGHT} />
-    {metrics.map((metric, index) => {
+
+  return <div className="pk-distribution-chart" role="img" aria-label="Distributions of observed and Pythia-PK pharmacokinetic quantities">
+    {metrics.map((metric) => {
       const allValues = [...metric.observed, ...metric.generated];
       const whiskerMin = allValues.length ? quantile(allValues, 0.05) : 0;
       const whiskerMax = allValues.length ? quantile(allValues, 0.95) : 1;
       const spread = Math.max(whiskerMax - whiskerMin, Math.abs(whiskerMax) * 0.12, 1e-9);
       const min = Math.max(0, whiskerMin - spread * 0.12);
       const max = whiskerMax + spread * 0.12;
-      const row = Math.floor(index / DISTRIBUTION_COLUMNS);
-      const column = index % DISTRIBUTION_COLUMNS;
-      const rowOffset = row * DISTRIBUTION_ROW_HEIGHT;
-      const y = (value: number) => rowOffset + DISTRIBUTION_BOTTOM - (value - min) / (max - min) * (DISTRIBUTION_BOTTOM - DISTRIBUTION_TOP);
+      const y = (value: number) => DISTRIBUTION_BOTTOM - (value - min) / (max - min) * (DISTRIBUTION_BOTTOM - DISTRIBUTION_TOP);
       const scaleTicks = [max, (max + min) / 2, min];
-      const midpoint = panelWidth * (column + 0.5);
-      const observedCenter = midpoint - (metric.generated.length ? 18 : 0);
-      const generatedCenter = midpoint + 18;
-      return <g key={metric.symbol}>
+      const midpoint = 194;
+      const observedCenter = midpoint - (metric.generated.length ? 34 : 0);
+      const generatedCenter = midpoint + 34;
+      return <svg key={metric.symbol} viewBox="0 0 280 300" aria-label={metric.label}>
         <title>{metric.label}</title>
-        {column > 0 && <line className="distribution-separator" x1={panelWidth * column} x2={panelWidth * column} y1={rowOffset + 8} y2={rowOffset + DISTRIBUTION_ROW_HEIGHT - 8} />}
-        <text className="distribution-symbol" x={midpoint} y={rowOffset + 18} textAnchor="middle"><MetricSymbol symbol={metric.symbol} /></text>
+        <text className="distribution-symbol" x={140} y={32} textAnchor="middle"><MetricSymbol symbol={metric.symbol} /></text>
         {scaleTicks.map((tick) => <g key={tick}>
           <line className="distribution-grid" x1={midpoint - 43} x2={midpoint + 43} y1={y(tick)} y2={y(tick)} />
           <text className="distribution-value" x={midpoint - 47} y={y(tick) + 3} textAnchor="end">{compactNumber(tick)}</text>
         </g>)}
         <DistributionGlyph values={metric.observed} center={observedCenter} color="var(--cyan)" y={y} />
-        <text className="distribution-count" x={observedCenter} y={rowOffset + 232} textAnchor="middle">n={metric.observed.length}</text>
+        <text className="distribution-count" x={observedCenter} y={280} textAnchor="middle">n={metric.observed.length}</text>
         {metric.generated.length > 0 && <>
           <DistributionGlyph values={metric.generated} center={generatedCenter} color="var(--generated)" y={y} />
-          <text className="distribution-count" x={generatedCenter} y={rowOffset + 232} textAnchor="middle">n={metric.generated.length}</text>
+          <text className="distribution-count" x={generatedCenter} y={280} textAnchor="middle">n={metric.generated.length}</text>
         </>}
-      </g>;
+      </svg>;
     })}
-  </svg>;
+  </div>;
 }

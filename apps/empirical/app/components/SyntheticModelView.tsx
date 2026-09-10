@@ -117,7 +117,7 @@ export function roleLabelPositions(graph: GraphDraw): Map<number, GraphPoint> {
   const boxes: LabelBox[] = [];
   const lines: Array<[GraphPoint, GraphPoint]> = [];
   const textBox = (p: GraphPoint, characters: number): LabelBox => ({
-    x: p.x, y: p.y - 0.8, halfWidth: characters * 0.75 + 1, halfHeight: 2.3,
+    x: p.x, y: p.y - 1.12, halfWidth: characters * 1.05 + 1.4, halfHeight: 3.22,
   });
   for (const node of graph.nodes) boxes.push({ ...nodePosition(graph, node.id), halfWidth: 7, halfHeight: 7 });
   for (const edge of graph.edges) {
@@ -147,8 +147,9 @@ export function roleLabelPositions(graph: GraphDraw): Map<number, GraphPoint> {
       const sides = node.id === graph.central ? [-1, 1] : [1, -1];
       for (const side of sides) for (const dx of [0, -8, 8, -16, 16])
         candidates.push({ x: origin.x + dx, y: origin.y + side * radius });
-      for (const side of [-1, 1]) candidates.push({ x: origin.x + side * (radius + length * 0.75), y: origin.y + 1 });
+      for (const side of [-1, 1]) candidates.push({ x: origin.x + side * (radius + length * 1.05), y: origin.y + 1 });
     }
+    if (node.id === graph.central) candidates.sort((a, b) => Number(a.y >= origin.y) - Number(b.y >= origin.y));
     let best = candidates[0], bestScore = Infinity;
     for (const candidate of candidates) {
       const box = textBox(candidate, length);
@@ -365,13 +366,14 @@ export function DoseTimeline({
   const left = 40;
   const right = 570;
   const axisY = 55;
-  const tickLabelY = Math.max(105, 76 + observationTimes.length * 2.8 + 8);
+  const tickLabelY = Math.max(105, 76 + observationTimes.length * 2.8 + 14);
   const x = (time: number) =>
     left + Math.max(0, Math.min(1, time)) * (right - left);
   return (
     <svg
       className="synthetic-dose-timeline"
-      viewBox={`0 0 610 ${tickLabelY + 20}`}
+      style={{ aspectRatio: `610 / ${tickLabelY + 30}` }}
+      viewBox={`0 0 610 ${tickLabelY + 30}`}
       role="img"
       aria-label="Dimensionless dose and observation schedule timeline"
     >
@@ -424,7 +426,7 @@ export function DoseTimeline({
           ))}
         </g>
       ))}
-      <text className="timeline-axis-title" x={right} y={tickLabelY + 15}>
+      <text className="timeline-axis-title" x={right} y={tickLabelY + 23}>
         dimensionless time τ
       </text>
       {events.map((event, index) => {

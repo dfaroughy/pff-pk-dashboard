@@ -136,7 +136,7 @@ test.each(["v1", "v6", "v7"] as const)(
       version,
       seed: 46,
       individuals: 16,
-      schedule: "unscheduled",
+      schedule: "exact",
       observations: 8,
     });
     expect(onGenerate.mock.calls[0][0].source).toBe("canonical");
@@ -501,7 +501,7 @@ test("dose deletion and grid resampling preserve the model and update automatica
   expect(request.mock.calls.at(-1)?.[0].doseEvents).toEqual([{ time: 0, amount: 1, duration: 0 }]);
   await user.click(screen.getByRole("button", { name: "Resample grid" }));
   await ready();
-  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 46, gridSeed: 1, schedule: "unscheduled" });
+  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 46, gridSeed: 1, schedule: "exact" });
 });
 
 test("shows generic observed and hidden covariates with MLP shapes and resamples only the MLP", async () => {

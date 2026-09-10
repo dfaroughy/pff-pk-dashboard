@@ -218,7 +218,9 @@ test("keeps the observed VPC on its original observation-time mesh after inferen
   const chart = screen.getByRole("img", { name: "Pythia-PK visual predictive check" });
   const empiricalMarkers = [...chart.querySelectorAll("g[clip-path] circle")];
   expect(empiricalMarkers).toHaveLength(6);
-  expect(empiricalMarkers.at(-1)?.getAttribute("cx")).toBe("698");
+  const plot = chart.querySelector("clipPath rect")!;
+    const rightEdge = Number(plot.getAttribute("x")) + Number(plot.getAttribute("width"));
+    expect(Number(empiricalMarkers.at(-1)?.getAttribute("cx"))).toBe(rightEdge);
 });
 
 test("Pythia is generation-only and sends the baseline protocol", async () => {

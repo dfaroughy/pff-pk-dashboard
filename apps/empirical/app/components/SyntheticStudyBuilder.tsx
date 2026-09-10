@@ -167,7 +167,7 @@ export function SyntheticStudyBuilder({
   const [seed, setSeed] = useState(SYNTHETIC_INITIAL_SEED);
   const [individuals, setIndividuals] = useState(16);
   const [observations, setObservations] = useState(8);
-  const [schedule, setSchedule] = useState("unscheduled");
+  const [schedule, setSchedule] = useState("exact");
   const [shape, setShape] = useState("early");
   const [gridSeed, setGridSeed] = useState(0);
   const [mlpSeed, setMlpSeed] = useState<number | null>(null);
