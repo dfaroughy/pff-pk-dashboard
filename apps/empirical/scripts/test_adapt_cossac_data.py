@@ -11,6 +11,24 @@ ROOT = Path(__file__).resolve().parents[4] / "corpora/empirical"
 
 
 class AdapterTests(unittest.TestCase):
+    def test_nominal_dosing_preserves_measurements_and_original_doses(self):
+        for drug, nominal, count in [("warfarin", 115, 32), ("theophylline", 320, 11)]:
+            original, _, original_pd = adapt(ROOT, drug)
+            study, provenance, pd = adapt(ROOT, drug, nominal_dosing=True)
+            self.assertEqual(study["dose"], nominal)
+            self.assertEqual(len(study["subjects"]), count)
+            self.assertEqual(provenance["subjects"], count)
+            self.assertEqual(pd, original_pd)
+            lookup = {s["id"]: s for s in original["subjects"]}
+            for subject in study["subjects"]:
+                self.assertEqual(subject["doseEvents"], study["doseEvents"])
+                self.assertEqual(subject["recordedDoseEvents"], lookup[subject["id"]]["doseEvents"])
+                self.assertEqual(subject["points"], lookup[subject["id"]]["points"])
+                self.assertEqual(subject["covariates"], lookup[subject["id"]]["covariates"])
+            self.assertFalse(study["dosePolicy"]["concentrationsRescaled"])
+            if drug == "theophylline":
+                self.assertEqual(study["dosePolicy"]["excludedSubjects"][0]["subjectId"], "cossac-theophylline-9")
+
     def test_catalogue_replaces_only_overlapping_sources(self):
         old = [
             {"id": "old-theoph", "drug": "theophylline", "source": "datasets::Theoph"},
@@ -54,6 +72,7 @@ class AdapterTests(unittest.TestCase):
         subject = study["subjects"][0]
         self.assertAlmostEqual(subject["doseEvents"][0]["amount"], 319.992)
         self.assertEqual(subject["points"][0], [0.25, 2840])
+        self.assertEqual(subject["covariates"]["sex"], "male")
 
     def test_remifentanil_infusion_conversion(self):
         study, _, _ = adapt(ROOT, "remifentanil")

@@ -150,7 +150,7 @@ function LinearPopulation({
 }
 
 export function SyntheticStudyBuilder({
-  version = "v6",
+  version = "v7",
   onGenerate,
   onInvalidate,
   censoringControls,
@@ -618,10 +618,7 @@ export function SyntheticStudyBuilder({
             <>
               <p>
                 Age, weight, height, sex, renal and hepatic function, and
-                metabolic phenotype. Missing fields remain missing; they are not
-                zero-valued patients. These influence the simulated dynamics;
-                the currently served Pythia models do not condition on these
-                fields.
+                metabolic phenotype. Simulated patient values.
               </p>
               {controls(["physiology"])}
               {draw && (

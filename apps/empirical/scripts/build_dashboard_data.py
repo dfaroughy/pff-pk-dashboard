@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from adapt_cossac_data import SPECS, adapt
+from adapt_external_simulated import adapt as adapt_external_simulated
 
 PFFF_ROOT = Path(os.environ.get("PFFF_ROOT", Path(__file__).resolve().parents[4])).resolve()
 ROOT = Path(os.environ.get("PFFF_EMPIRICAL_ROOT", PFFF_ROOT / "corpora" / "empirical")).resolve()
@@ -283,6 +284,7 @@ def load_lenuzza() -> list[dict[str, Any]]:
 def main() -> None:
     studies = curate_studies(load_lenuzza() + load_individual_studies())
     studies = add_cossac_studies(studies)
+    studies += load_external_simulated_studies()
     studies.sort(key=lambda item: (
         bool(re.match(r"^\d+-hydroxy", item["drug"].lower())),
         item["drug"].lower(),
@@ -306,10 +308,17 @@ def add_cossac_studies(studies: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ("remifentanil", "nlme::Remifentanil"),
         ("warfarin", "nlmixr2data::warfarin (Funaki 2018)"),
     }
-    additions = [adapt(ROOT, drug)[0] for drug in SPECS]
+    additions = [adapt(ROOT, drug, nominal_dosing=True)[0] for drug in SPECS]
     ids = {study["id"] for study in additions}
     return [study for study in studies if
             (study["drug"], study["source"]) not in replacements and study["id"] not in ids] + additions
+
+
+def load_external_simulated_studies() -> list[dict[str, Any]]:
+    """Add independently simulated, non-training benchmarks to the catalogue."""
+    root = PFFF_ROOT / "corpora" / "external_simulated"
+    studies, _ = adapt_external_simulated(root)
+    return studies
 
 
 if __name__ == "__main__":

@@ -28,8 +28,8 @@ import { syntheticRequest } from "../app/lib/model-api";
 vi.mock("../app/lib/model-api", () => ({ syntheticRequest: vi.fn() }));
 const request = vi.mocked(syntheticRequest);
 function response(
-  version: SyntheticVersion = "v6",
-  seed = 46,
+  version: SyntheticVersion = "v7",
+  seed = 9877795,
 ): SyntheticResponse {
   return {
     study: {
@@ -107,7 +107,7 @@ beforeEach(() =>
   request.mockImplementation(async (payload) => {
     const result = response(
       payload.version as SyntheticVersion,
-      Number(payload.seed ?? 46),
+      Number(payload.seed ?? 9877795),
     );
     return payload.action === "describe" ? result.description : result;
   }),
@@ -134,7 +134,7 @@ test.each(["v1", "v6", "v7"] as const)(
     await waitFor(() => expect(onGenerate).toHaveBeenCalledOnce());
     expect(request.mock.calls[1][0]).toMatchObject({
       version,
-      seed: 46,
+      seed: 9877795,
       individuals: 16,
       schedule: "exact",
       observations: 8,
@@ -310,7 +310,7 @@ test("kinetic edits change the displayed law and replay at the same seed", async
   expect(screen.getByLabelText("Flux 1 threshold")).toBeTruthy();
   await ready();
   expect(request.mock.calls.at(-1)?.[0]).toMatchObject({
-    seed: 46,
+    seed: 9877795,
     kineticEdits: { "0": { beta: 1 } },
   });
 });
@@ -328,7 +328,7 @@ test("manual dose changes survive generation", async () => {
   fireEvent.blur(amount);
   await ready();
   expect(request.mock.calls.at(-1)?.[0]).toMatchObject({
-    seed: 46,
+    seed: 9877795,
     doseEvents: [
       { time: 0, amount: 1, duration: 0 },
       { time: 0.5, amount: 2.5, duration: 0 },
@@ -351,12 +351,12 @@ test("numeric flux edits update curves without blur, and new model clears manual
   request.mockResolvedValueOnce(updated);
   fireEvent.change(screen.getByLabelText("Flux 1 rate"), { target: { value: "2" } });
   await ready();
-  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 46, kineticEdits: { "0": { kappa: 2 } } });
+  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 9877795, kineticEdits: { "0": { kappa: 2 } } });
   expect(onGenerate).toHaveBeenLastCalledWith(updated.study, undefined);
   await user.click(screen.getByRole("button", { name: "Sample new model" }));
   await ready();
   const fresh = request.mock.calls.at(-1)![0];
-  expect(fresh.seed).not.toBe(46);
+  expect(fresh.seed).not.toBe(9877795);
   expect(fresh.kineticEdits).toBeUndefined();
   expect(fresh.doseEvents).toBeUndefined();
   expect(onGenerate.mock.calls.at(-1)?.[1]).toBe(fresh.seed);
@@ -378,12 +378,12 @@ test("graph controls wait for their draw button and do not leak into automatic e
   expect(request).toHaveBeenCalledTimes(2);
   fireEvent.change(screen.getByLabelText("Observations per individual"), { target: { value: "12" } });
   await ready();
-  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 46, overrides: {}, observations: 12 });
+  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 9877795, overrides: {}, observations: 12 });
   await user.click(screen.getByRole("button", { name: "Draw new compartment model" }));
   await ready();
   expect(request.mock.calls.at(-1)?.[0].overrides).toEqual({ "graph.n_transit_max": 6 });
   const drawnSeed = request.mock.calls.at(-1)?.[0].seed;
-  expect(drawnSeed).not.toBe(46);
+  expect(drawnSeed).not.toBe(9877795);
   fireEvent.change(control, { target: { value: "7" } });
   fireEvent.change(screen.getByLabelText("Observations per individual"), { target: { value: "13" } });
   await ready();
@@ -412,7 +412,7 @@ test("new edits cancel in-flight results and remain editable while computing", a
   finish(response("v6", 999));
   await Promise.resolve();
   expect(onGenerate).toHaveBeenCalledTimes(2);
-  expect(onGenerate.mock.calls.at(-1)?.[0].study).toBe("v6");
+  expect(onGenerate.mock.calls.at(-1)?.[0].study).toBe("v7");
 });
 
 test("a failed automatic update preserves the plot and recovers on the next edit", async () => {
@@ -425,7 +425,7 @@ test("a failed automatic update preserves the plot and recovers on the next edit
   expect(onGenerate).toHaveBeenCalledOnce();
   fireEvent.change(screen.getByLabelText("Observations per individual"), { target: { value: "13" } });
   await ready();
-  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 46, observations: 13 });
+  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 9877795, observations: 13 });
   expect(onGenerate).toHaveBeenCalledTimes(2);
 });
 
@@ -501,7 +501,7 @@ test("dose deletion and grid resampling preserve the model and update automatica
   expect(request.mock.calls.at(-1)?.[0].doseEvents).toEqual([{ time: 0, amount: 1, duration: 0 }]);
   await user.click(screen.getByRole("button", { name: "Resample grid" }));
   await ready();
-  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 46, gridSeed: 1, schedule: "exact" });
+  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 9877795, gridSeed: 1, schedule: "exact" });
 });
 
 test("shows generic observed and hidden covariates with MLP shapes and resamples only the MLP", async () => {
@@ -533,7 +533,7 @@ test("shows generic observed and hidden covariates with MLP shapes and resamples
   expect(screen.getByText(/Output order: B → A, C → A, A → ∅, Central volume/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Resample MLP" }));
   await ready();
-  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 46, mlpSeed: expect.any(Number) });
+  expect(request.mock.calls.at(-1)?.[0]).toMatchObject({ seed: 9877795, mlpSeed: expect.any(Number) });
   expect(onGenerate.mock.calls.at(-1)?.[1]).toBeUndefined();
   fireEvent.click(screen.getByRole("button", { name: "Sample new model" }));
   await ready();

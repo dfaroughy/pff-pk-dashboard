@@ -35,7 +35,7 @@ def numeric(value):
     return result
 
 
-def adapt(root: Path, drug: str):
+def adapt(root: Path, drug: str, *, nominal_dosing: bool = False):
     filename, delimiter, id_col, time_col, value_col, dose_col, route, time_scale, conc_scale, unit = SPECS[drug]
     path = root / filename
     subjects, pd = {}, []
@@ -50,6 +50,10 @@ def adapt(root: Path, drug: str):
                 if value in {"", "."}:
                     continue
                 value = value if name == "sex" else numeric(value)
+                if name == "sex":
+                    # This export uses explicit M/F labels, unlike numeric codes
+                    # retained uninterpreted in the other source datasets.
+                    value = {"m": "male", "f": "female"}.get(value.lower(), value.lower())
                 previous = subject["covariates"].setdefault(name, value)
                 if previous != value:
                     raise ValueError(f"{filename}:{row_number}: time-varying {column} is unsupported")
@@ -111,6 +115,35 @@ def adapt(root: Path, drug: str):
         "sourceTimeToHours": time_scale, "sourceConcentrationToNgMl": conc_scale,
         "doseConversion": "AMT * WEIGHT (mg/kg to mg)" if drug == "theophylline" else "recorded total amount",
     }
+    if nominal_dosing and drug in {"warfarin", "theophylline"}:
+        nominal = 115.0 if drug == "warfarin" else 320.0
+        excluded = []
+        retained = []
+        for subject in study["subjects"]:
+            events = subject["doseEvents"]
+            if len(events) != 1 or events[0]["time"] != 0 or events[0]["duration"] != 0:
+                raise ValueError("Nominal dose policy requires a single time-zero oral dose")
+            if drug == "theophylline" and math.isclose(events[0]["amount"], 267.84, abs_tol=1e-6):
+                excluded.append({"subjectId": subject["id"], "recordedDoseMg": events[0]["amount"]})
+                continue
+            subject["recordedDoseEvents"] = events
+            subject["doseEvents"] = [{**events[0], "amount": nominal}]
+            retained.append(subject)
+        study["subjects"] = retained
+        study["dose"] = nominal
+        study["doseEvents"] = [{"time": 0.0, "amount": nominal, "unit": "mg", "route": "oral", "duration": 0.0}]
+        policy = {
+            "kind": "user_requested_nominal_dose", "nominalDoseMg": nominal,
+            "recordedDoseRangeMg": [min(s["recordedDoseEvents"][0]["amount"] for s in retained),
+                                    max(s["recordedDoseEvents"][0]["amount"] for s in retained)],
+            "excludedSubjects": excluded, "concentrationsRescaled": False,
+        }
+        study["dosePolicy"] = policy
+        provenance["dosePolicy"] = policy
+        provenance["sourceSubjects"] = provenance["subjects"]
+        provenance["subjects"] = len(retained)
+        provenance["pkObservations"] = sum(len(s["points"]) for s in retained)
+        provenance["doseEvents"] = len(retained)
     return study, provenance, pd
 
 
@@ -120,7 +153,7 @@ def main():
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     out = args.out or args.root / "dashboard_cossac"
-    results = [adapt(args.root, drug) for drug in SPECS]  # Validate all before writing.
+    results = [adapt(args.root, drug, nominal_dosing=True) for drug in SPECS]  # Validate all before writing.
     timestamp = datetime.now(timezone.utc).isoformat()
     def corpus(studies):
         return {"schemaVersion": 1, "generatedAt": timestamp, "studies": studies}
@@ -131,7 +164,7 @@ def main():
         write(f"{study['drug']}.json", corpus([study]))
     write("corpus.json", corpus([s for s, _, _ in results]))
     write("warfarin_pd.json", {"endpoint": "Prothrombin Complex Response", "timeUnit": "h", "valueUnit": "source-reported response", "observations": results[0][2]})
-    write("manifest.json", {"adapterVersion": 1, "reference": "https://doi.org/10.1002/psp4.12612", "datasets": [p for _, p, _ in results], "warnings": ["Subject doseEvents are authoritative; no shared cohort dose is invented.", "Censoring and LLOQ are unreported; zero observations are preserved without censor labels.", "Numeric sex codes are retained without guessing their semantics.", "Replace overlapping sources; do not append these as independent replicated cohorts."]})
+    write("manifest.json", {"adapterVersion": 2, "reference": "https://doi.org/10.1002/psp4.12612", "datasets": [p for _, p, _ in results], "warnings": ["Warfarin and theophylline use explicit nominal-dose policies; recordedDoseEvents preserve original doses. Concentrations are not rescaled.", "Censoring and LLOQ are unreported; zero observations are preserved without censor labels.", "Numeric sex codes are retained without guessing their semantics.", "Replace overlapping sources; do not append these as independent replicated cohorts."]})
     print(f"Wrote four studies and combined corpus to {out}")
 
 

@@ -7,7 +7,7 @@ import corpus from "../public/data/corpus.json";
 
 afterEach(cleanup);
 test("all four complete cohorts appear exactly once in the catalogue", () => {
-  for (const [drug, count] of [["warfarin", 32], ["tobramycin", 97], ["theophylline", 12], ["remifentanil", 65]] as const) {
+  for (const [drug, count] of [["warfarin", 32], ["tobramycin", 97], ["theophylline", 11], ["remifentanil", 65]] as const) {
     const matches = corpus.studies.filter((s) => s.id === `empirical-cossac-${drug}`);
     expect(matches).toHaveLength(1);
     expect(matches[0].subjects).toHaveLength(count);

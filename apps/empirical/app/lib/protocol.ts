@@ -22,10 +22,21 @@ export function studyHorizon(study: Pick<Study, "subjects" | "summary">): number
   return Math.max(...times, 1);
 }
 
+export function sharedObservedProtocol(study: Study): DoseEvent[] | undefined {
+  if (study.doseEvents?.length) return study.doseEvents;
+  const first = study.subjects[0]?.doseEvents;
+  if (!first?.length) return undefined;
+  const signature = (events: DoseEvent[]) => JSON.stringify(events.map((event) =>
+    [event.time, event.amount, event.unit, event.route, event.duration ?? 0],
+  ).sort((left, right) => Number(left[0]) - Number(right[0])));
+  const reference = signature(first);
+  return study.subjects.every((subject) => subject.doseEvents?.length && signature(subject.doseEvents) === reference)
+    ? first : undefined;
+}
+
 export function observedProtocol(study: Study, protocolUnit: string): DoseEvent[] {
-  const events = study.doseEvents?.length
-    ? study.doseEvents
-    : [{ time: 0, amount: study.dose ?? 1, unit: protocolUnit, route: study.route }];
+  const events = sharedObservedProtocol(study)
+    ?? [{ time: 0, amount: study.dose ?? 1, unit: protocolUnit, route: study.route }];
   return events
     .map((event) => ({ ...event, unit: protocolUnit, route: event.route || study.route }))
     .sort((left, right) => left.time - right.time);

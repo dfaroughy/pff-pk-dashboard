@@ -1,7 +1,7 @@
 import type { Study } from "./types";
 
 export type SyntheticVersion = "v1" | "v6" | "v7";
-export const SYNTHETIC_INITIAL_SEED = 46;
+export const SYNTHETIC_INITIAL_SEED = 9877795;
 export const SYNTHETIC_LIMITS = {
   individuals: { min: 2, max: 100, default: 16 },
   observations: { min: 2, max: 20, default: 8 },

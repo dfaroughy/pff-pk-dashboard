@@ -9,16 +9,28 @@ test("portable build contains the PK explorer entry point", async () => {
   assert.ok((await stat(new URL("../portable-dist/data/corpus.json", import.meta.url))).isFile());
 });
 
-test("built catalogue contains the curated Lenuzza and empirical studies", async () => {
+test("built catalogue contains the curated studies and external simulated benchmarks", async () => {
   const corpus = JSON.parse(await readFile(new URL("../portable-dist/data/corpus.json", import.meta.url), "utf8"));
   assert.equal(corpus.schemaVersion, 1);
-  assert.equal(corpus.studies.length, 44);
+  assert.equal(corpus.studies.length, 53);
   const caffeine = corpus.studies.find((study) => study.id === "lenuzza-caffeine");
   assert.equal(caffeine.concentrationUnit, "ng/mL");
   assert.equal(caffeine.doseUnit, "mg");
   assert.ok(caffeine.subjects.length >= 8);
   assert.ok(corpus.studies.every((study) => study.subjects.length >= 2));
-  assert.ok(corpus.studies.every((study) => ["Lenuzza 2016", "Empirical individuals", "COSSAC reference datasets"].includes(study.origin)));
+  assert.ok(corpus.studies.every((study) => ["Lenuzza 2016", "Empirical individuals", "COSSAC reference datasets", "External simulated benchmark"].includes(study.origin)));
+
+  const nlmixr2 = corpus.studies.filter((study) => study.benchmark?.provider === "nlmixr2data");
+  assert.equal(nlmixr2.length, 4);
+  assert.ok(nlmixr2.every((study) => study.subjects.length === 30));
+  assert.ok(nlmixr2.every((study) => study.subjects.every((subject) => subject.doseEvents.length === 8)));
+  assert.ok(nlmixr2.every((study) => study.subjects.every((subject) => subject.covariates === undefined)));
+
+  const pumas = corpus.studies.filter((study) => study.benchmark?.provider === "Pumas");
+  assert.equal(pumas.length, 5);
+  assert.ok(pumas.every((study) => study.subjects.length === 10));
+  assert.ok(pumas.every((study) => study.subjects.every((subject) => subject.covariates.sex)));
+  assert.ok(pumas.every((study) => study.subjects.every((subject) => subject.covariates.weight_kg > 0)));
 
   const drugs = corpus.studies.map((study) => study.drug);
   assert.equal(drugs[0], "caffeine");

@@ -1,4 +1,4 @@
-import type { PkEstimate, Point, VpcPoint } from "./types";
+import type { PkEstimate, Point, Study, VpcPoint } from "./types";
 
 export function quantile(values: number[], probability: number): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -15,14 +15,29 @@ export function vpcQuantile(values: number[], probability: number): number {
   return [...values].sort((a, b) => a - b)[Math.floor(probability * (values.length - 1) + 0.5)];
 }
 
-export function observedVpc(study: { subjects: { points: Point[] }[] }): VpcPoint[] {
-  const byTime = new Map<number, number[]>();
-  study.subjects.forEach((subject) => subject.points.forEach(([time, value]) => {
-    byTime.set(time, [...(byTime.get(time) ?? []), value]);
+export function observedVpc(study: { subjects: { points: Point[]; cens?: (0 | 1 | null)[] }[]; assay?: Study["assay"] }): VpcPoint[] {
+  const byTime = new Map<number, { value: number; flag: 0 | 1 | null }[]>();
+  const lloq = study.assay?.lloq;
+  study.subjects.forEach(subject => subject.points.forEach(([time, value], index) => {
+    let flag = subject.cens ? subject.cens[index] : lloq !== undefined && value <= lloq ? null : 0;
+    if (lloq !== undefined && value < lloq && flag === 0) flag = null;
+    byTime.set(time, [...(byTime.get(time) ?? []), { value, flag }]);
   }));
-  return [...byTime.entries()].sort(([a], [b]) => a - b).map(([time, values]) => ({
-    time, q05: vpcQuantile(values, 0.05), q50: vpcQuantile(values, 0.5), q95: vpcQuantile(values, 0.95), n: values.length,
-  }));
+  return [...byTime.entries()].sort(([a], [b]) => a - b).map(([time, records]) => {
+    const values = records.map(record => record.value);
+    const n = values.length;
+    if (lloq === undefined) return { time, q05: vpcQuantile(values, .05), q50: vpcQuantile(values, .5), q95: vpcQuantile(values, .95), n };
+    const lower = records.map(({ value, flag }) => flag === 0 ? value : 0);
+    const upper = records.map(({ value, flag }) => flag === 0 ? value : flag === 1 ? lloq : Math.max(lloq, value));
+    const identified = (p: number) => {
+      const lo = vpcQuantile(lower, p), hi = vpcQuantile(upper, p);
+      return lo === hi && hi >= lloq ? hi : null;
+    };
+    const nCensored = records.filter(r => r.flag === 1).length;
+    const nUnresolved = records.filter(r => r.flag === null).length;
+    return { time, q05: identified(.05), q50: identified(.5), q95: identified(.95), n,
+      blq: { observed: { lower: nCensored / n, upper: (nCensored + nUnresolved) / n, nCensored, nUnresolved } } };
+  });
 }
 
 function auc(points: Point[]): number | null {

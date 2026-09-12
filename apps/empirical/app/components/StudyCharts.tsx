@@ -2,9 +2,10 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { generatedObservationCurves } from "../lib/generated-observations";
+import { concentrationLabel } from "../lib/chart-labels";
 import { observedVpc, pkEstimatesFromPoints, quantile } from "../lib/pk";
 import { syntheticRequest, type InferenceResponse } from "../lib/model-api";
-import type { Point, Study, VpcPoint } from "../lib/types";
+import type { BlqPoint, Point, Study, VpcPoint } from "../lib/types";
 
 const WIDTH = 720;
 const HEIGHT = 480;
@@ -23,12 +24,11 @@ export function wrapAxisLabel(label: string, limit: number): string[] {
   return lines;
 }
 
-function bounds(series: Point[][], logY: boolean) {
-  const points = series.flat().filter(([, y]) => y > 0 && Number.isFinite(y));
-  if (!points.length) return { xMin: 0, xMax: 1, yMin: logY ? -1 : 0, yMax: 1 };
-  const xValues = points.map(([x]) => x);
+function bounds(series: Point[][], logY: boolean, fraction = false) {
+  const points = series.flat().filter(([, y]) => (fraction ? y >= 0 : y > 0) && Number.isFinite(y));
+  const xMax = Math.max(1, ...series.flat().map(([x]) => x).filter(Number.isFinite));
+  if (!points.length) return { xMin: 0, xMax, yMin: logY ? -1 : 0, yMax: 1 };
   const yValues = points.map(([, y]) => logY ? Math.log10(y) : y);
-  const xMax = Math.max(...xValues, 1);
   let yMin = logY ? Math.min(...yValues) : 0;
   let yMax = Math.max(...yValues);
   if (logY) {
@@ -50,11 +50,13 @@ function ticks(min: number, max: number, count = 5) {
 
 type LineStyle = { stroke: string; width?: number; opacity?: number; markers?: boolean; radius?: number; dash?: string };
 
-function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [], assay, flagged = [] }: {
+export function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [], errorBars = [], assay, flagged = [], fraction = false }: {
   series: Point[][]; styles: LineStyle[]; logY: boolean; xLabel: string; yLabel: string; ariaLabel: string;
   bands?: { lower: Point[]; upper: Point[]; fill: string }[];
+  errorBars?: { point: Point; lower: number; upper: number; stroke: string; dash?: string }[];
   assay?: Study["assay"];
   flagged?: { point: Point; cens: 1 | null }[];
+  fraction?: boolean;
 }) {
   const clipId = useId().replaceAll(":", "");
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -67,21 +69,40 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [], as
     observer.observe(svgRef.current);
     return () => observer.disconnect();
   }, []);
-  const domain = bounds([...series, ...bands.flatMap((band) => [band.lower, band.upper]), ...(assay ? [[[0, assay.lloq] as Point]] : [])], logY);
+  const domain = bounds([...series, ...bands.flatMap((band) => [band.lower, band.upper]), errorBars.flatMap(b => [[b.point[0], b.lower], [b.point[0], b.upper]] as Point[]), ...(assay ? [[[0, assay.lloq] as Point]] : [])], logY, fraction);
+  if (fraction) { domain.yMin = 0; domain.yMax = 1; }
   const yTicks = ticks(domain.yMin, domain.yMax);
-  const tickText = (tick: number) => logY ? (10 ** tick).toExponential(1).replace("e+", "e") : tick.toPrecision(3);
+  const tickText = (tick: number) => fraction ? `${Math.round(tick * 100)}%` : logY ? (10 ** tick).toExponential(1).replace("e+", "e") : tick.toPrecision(3);
   const left = Math.max(64, ...yTicks.map(t => tickText(t).length * 12 + 16));
   const titleLines = wrapAxisLabel(yLabel, Math.max(10, Math.floor((width - left - MARGIN.right) / 12)));
   const marginTop = Math.max(MARGIN.top, titleLines.length * 24 + 16);
-  const height = Math.max(420, width * HEIGHT / WIDTH, marginTop + 220 + MARGIN.bottom);
+  const height = fraction ? marginTop + 120 + MARGIN.bottom : Math.max(420, width * HEIGHT / WIDTH, marginTop + 220 + MARGIN.bottom);
   const x = (value: number) => left + (value - domain.xMin) / (domain.xMax - domain.xMin) * (width - left - MARGIN.right);
   const y = (value: number) => {
     const transformed = logY ? Math.log10(Math.max(value, 1e-30)) : value;
     return height - MARGIN.bottom - (transformed - domain.yMin) / (domain.yMax - domain.yMin) * (height - marginTop - MARGIN.bottom);
   };
-  const path = (points: Point[]) => points.filter(([, value]) => value > 0).map(([time, value], index) => `${index ? "L" : "M"}${x(time).toFixed(2)},${y(value).toFixed(2)}`).join(" ");
-  const bandPath = (lower: Point[], upper: Point[]) => `${path(lower)} ${[...upper].reverse().map(([time, value]) => `L${x(time).toFixed(2)},${y(value).toFixed(2)}`).join(" ")} Z`;
-  return <svg ref={svgRef} className="chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
+  const valid = ([time, value]: Point) => Number.isFinite(time) && Number.isFinite(value) && (logY ? value > 0 : value >= 0);
+  const path = (points: Point[]) => {
+    let connected = false;
+    return points.map(point => {
+      if (!valid(point)) { connected = false; return ""; }
+      const command = `${connected ? "L" : "M"}${x(point[0]).toFixed(2)},${y(point[1]).toFixed(2)}`;
+      connected = true;
+      return command;
+    }).join(" ");
+  };
+  const bandPath = (lower: Point[], upper: Point[]) => {
+    const segments: string[] = [];
+    let start = 0;
+    for (let i = 0; i <= lower.length; i++) {
+      if (i < lower.length && valid(lower[i]) && upper[i] && valid(upper[i])) continue;
+      if (i > start) segments.push(`${path(lower.slice(start, i))} ${upper.slice(start, i).reverse().map(([t, v]) => `L${x(t).toFixed(2)},${y(v).toFixed(2)}`).join(" ")} Z`);
+      start = i + 1;
+    }
+    return segments.join(" ");
+  };
+  return <svg ref={svgRef} className={fraction ? "chart blq-chart" : "chart"} style={fraction ? { aspectRatio: `${width} / ${height}` } : undefined} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
     <defs><clipPath id={clipId}><rect x={left} y={marginTop} width={width - left - MARGIN.right} height={height - marginTop - MARGIN.bottom} /></clipPath></defs>
     {ticks(domain.xMin, domain.xMax, Math.min(5, Math.max(2, Math.floor((width - left - MARGIN.right) / 100) + 1))).map((tick) => <g key={`x-${tick}`}>
       <line className="gridline" x1={x(tick)} x2={x(tick)} y1={marginTop} y2={height - MARGIN.bottom} />
@@ -96,12 +117,21 @@ function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [], as
     })}
     <g clipPath={`url(#${clipId})`}>
       {bands.map((band, index) => <path key={`band-${index}`} d={bandPath(band.lower, band.upper)} fill={band.fill} />)}
+      {errorBars.filter(b => valid(b.point) && Number.isFinite(b.lower) && Number.isFinite(b.upper)).map((b, i) => {
+        const bottom = logY ? 10 ** domain.yMin : 0;
+        const lo = y(Math.max(bottom, b.lower)), hi = y(Math.max(bottom, b.upper)), cx = x(b.point[0]);
+        return <g key={`error-${i}`} aria-label="Mean plus or minus one standard deviation" stroke={b.stroke} strokeWidth="1.2" strokeDasharray={b.dash} opacity=".7">
+          <line x1={cx} x2={cx} y1={lo} y2={hi} />
+          {b.lower >= bottom && <line x1={cx - 4} x2={cx + 4} y1={lo} y2={lo} />}
+          <line x1={cx - 4} x2={cx + 4} y1={hi} y2={hi} />
+        </g>;
+      })}
       {assay && <line x1={left} x2={width - MARGIN.right} y1={y(assay.lloq)} y2={y(assay.lloq)} stroke="var(--assay-amber)" strokeWidth="1.2" strokeDasharray="6 4" />}
       {series.map((points, index) => {
         const style = styles[index] ?? styles[0];
         return <g key={`line-${index}`} opacity={style.opacity ?? 1}>
           <path d={path(points)} fill="none" stroke={style.stroke} strokeWidth={style.width ?? 1} strokeDasharray={style.dash} />
-          {style.markers && points.filter(([, value]) => value > 0).map(([time, value], pointIndex) => <circle key={pointIndex} cx={x(time)} cy={y(value)} r={style.radius ?? 2} fill={style.stroke} />)}
+          {style.markers && points.filter(valid).map(([time, value], pointIndex) => <circle key={pointIndex} cx={x(time)} cy={y(value)} r={style.radius ?? 2} fill={style.stroke} />)}
         </g>;
       })}
     </g>
@@ -131,7 +161,7 @@ export function TrajectoryChart({ study, logY, showLatent = false }: { study: St
   }, [study]);
   const latent = showLatent ? study.subjects.flatMap((s) => s.latentPoints ? [s.latentPoints] : []) : [];
   const flagged = censoringMarkers(study);
-  return <Chart assay={study.assay} flagged={flagged} series={[...latent, ...series]} styles={[...latent.map(() => ({ stroke: "var(--trajectory-blue)", opacity: 0.35, dash: "4 3" })), ...series.map(() => ({ stroke: "var(--trajectory-blue)", width: 1, opacity: study.subjects.length ? 0.72 : 1, markers: true, radius: 1.9 }))]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Concentration trajectories for ${study.drug}`} />;
+  return <Chart assay={study.assay} flagged={flagged} series={[...latent, ...series]} styles={[...latent.map(() => ({ stroke: "var(--trajectory-blue)", opacity: 0.35, dash: "4 3" })), ...series.map(() => ({ stroke: "var(--trajectory-blue)", width: 1, opacity: study.subjects.length ? 0.72 : 1, markers: true, radius: 1.9 }))]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={concentrationLabel(study.concentrationUnit)} ariaLabel={`Concentration trajectories for ${study.drug}`} />;
 }
 
 export function VpcChart({ study, logY, numBins, onBins }: { study: Study; logY: boolean; numBins?: number; onBins?: (bins: number) => void }) {
@@ -141,8 +171,9 @@ export function VpcChart({ study, logY, numBins, onBins }: { study: Study; logY:
   useEffect(() => {
     if (!study.subjects.length || (!irregular && numBins === undefined)) return;
     const abort = new AbortController();
-    void syntheticRequest<{ points: VpcPoint[]; effectiveBins: number }>({ action: "vpc", study, ...(numBins === undefined ? {} : { numBins }) }, abort.signal)
+    void syntheticRequest<{ points: VpcPoint[]; effectiveBins: number; censoring?: unknown }>({ action: "vpc", study, ...(numBins === undefined ? {} : { numBins }) }, abort.signal)
       .then((result) => { if (!abort.signal.aborted) {
+        if (study.assay && !result.censoring) return;
         setBinned({ study, numBins, points: result.points });
         onBins?.(result.effectiveBins);
       } })
@@ -153,17 +184,17 @@ export function VpcChart({ study, logY, numBins, onBins }: { study: Study; logY:
     const mean = study.summary.map((point) => [point.time, point.mean] as Point);
     const lower = study.summary.map((point) => [point.time, Math.max(point.mean - (point.sd ?? 0), 1e-30)] as Point);
     const upper = study.summary.map((point) => [point.time, point.mean + (point.sd ?? 0)] as Point);
-    return <Chart series={[mean]} styles={[{ stroke: "var(--magenta)", width: 1, markers: true, radius: 2.2 }]} bands={[{ lower, upper, fill: "var(--blue-summary-fill)" }]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Published concentration summary for ${study.drug}`} />;
+    return <Chart series={[mean]} styles={[{ stroke: "var(--magenta)", width: 1, markers: true, radius: 2.2 }]} bands={[{ lower, upper, fill: "var(--blue-summary-fill)" }]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={concentrationLabel(study.concentrationUnit)} ariaLabel={`Published concentration summary for ${study.drug}`} />;
   }
   const vpc = irregular || numBins !== undefined ? (binned?.study === study && binned.numBins === numBins ? binned.points : []) : observedVpc(study);
-  const q05 = vpc.map((point) => [point.time, point.q05] as Point);
-  const q50 = vpc.map((point) => [point.time, point.q50] as Point);
-  const q95 = vpc.map((point) => [point.time, point.q95] as Point);
-  return <Chart assay={study.assay} series={[q50, q05, q95]} styles={[
+  const q05 = vpc.map((point) => [point.time, point.q05 ?? NaN] as Point);
+  const q50 = vpc.map((point) => [point.time, point.q50 ?? NaN] as Point);
+  const q95 = vpc.map((point) => [point.time, point.q95 ?? NaN] as Point);
+  return <><Chart assay={study.assay} series={[q50, q05, q95]} styles={[
     { stroke: "var(--magenta)", width: 1, markers: true, radius: 2.2 },
     { stroke: "var(--cyan)", width: 1, markers: true, radius: 2.2 },
     { stroke: "var(--cyan)", width: 1, markers: true, radius: 2.2 },
-  ]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={`Concentration (${study.concentrationUnit})`} ariaLabel={`Observed visual predictive check for ${study.drug}`} />;
+  ]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={concentrationLabel(study.concentrationUnit)} ariaLabel={`Observed visual predictive check for ${study.drug}`} /><BlqChart points={vpc} timeUnit={study.timeUnit} /></>;
 }
 
 export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { result: InferenceResponse; study: Study; logY: boolean; showEmpirical: boolean }) {
@@ -179,7 +210,7 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { r
     ]}
     logY={logY}
     xLabel={`Time (${result.units.time})`}
-    yLabel={`Concentration (${result.units.concentration})`}
+    yLabel={concentrationLabel(result.units.concentration)}
     ariaLabel="Pythia-PK generated individual concentration profiles"
   />;
 }
@@ -190,13 +221,13 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
     ? model.map((entry) => ({ time: entry.time, n: entry.nObservations, ...entry.observed }))
     : observedVpc(study);
   const empiricalSeries = showEmpirical ? [
-    observed.map((entry) => [entry.time, entry.q05] as Point),
-    observed.map((entry) => [entry.time, entry.q50] as Point),
-    observed.map((entry) => [entry.time, entry.q95] as Point),
+    observed.map((entry) => [entry.time, entry.q05 ?? NaN] as Point),
+    observed.map((entry) => [entry.time, entry.q50 ?? NaN] as Point),
+    observed.map((entry) => [entry.time, entry.q95 ?? NaN] as Point),
   ] : [];
   const contour = (key: "q05" | "q50" | "q95", bound: "lower" | "upper") =>
-    model.map((entry) => [entry.time, entry.simulated[key][bound]] as Point);
-  return <Chart
+    model.map((entry) => [entry.time, entry.simulated[key][bound] ?? NaN] as Point);
+  return <><Chart
     assay={study.assay}
     series={empiricalSeries}
     styles={empiricalSeries.map((_, index) => ({ stroke: index === 1 ? "var(--magenta)" : "var(--cyan)", width: 1, markers: true, radius: 2.1 }))}
@@ -207,9 +238,27 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
     ]}
     logY={logY}
     xLabel={`Time (${result.units.time})`}
-    yLabel={`Concentration (${result.units.concentration})`}
+    yLabel={concentrationLabel(result.units.concentration)}
     ariaLabel="Pythia-PK visual predictive check"
-  />;
+  /><BlqChart points={model} timeUnit={study.timeUnit} /></>;
+}
+
+function BlqChart({ points, timeUnit }: { points: { time: number; blq?: BlqPoint }[]; timeUnit: string }) {
+  if (!points.some(p => p.blq)) return null;
+  const observed = (key: "lower" | "upper") => points.map(p => [p.time, p.blq?.observed[key] ?? NaN] as Point);
+  const simulated = (key: "lower" | "upper" | "center") => points.map(p => [p.time, p.blq?.simulated?.[key] ?? NaN] as Point);
+  const uncertain = points.some(p => (p.blq?.observed.nUnresolved ?? 0) > 0);
+  const generated = points.some(p => p.blq?.simulated);
+  return <div className="blq-panel">
+    <div className="legend">
+      <span className="legend-item"><i className="blue-line" />{uncertain ? "Study range (unresolved flags)" : "Study"}</span>
+      {generated && <span className="legend-item"><i className="red-line" />Pythia · 90% interval</span>}
+    </div>
+    <Chart fraction logY={false} xLabel={`Time (${timeUnit})`} yLabel="Fraction below LLOQ" ariaLabel="Fraction of observations below the quantification limit"
+      series={[observed("lower"), ...(uncertain ? [observed("upper")] : []), ...(generated ? [simulated("center")] : [])]}
+      styles={[{ stroke: "var(--cyan)", markers: true }, ...(uncertain ? [{ stroke: "var(--cyan)", markers: true, dash: "4 3" }] : []), ...(generated ? [{ stroke: "var(--magenta)", markers: true }] : [])]}
+      bands={[...(uncertain ? [{ lower: observed("lower"), upper: observed("upper"), fill: "var(--blue-summary-fill)" }] : []), ...(generated ? [{ lower: simulated("lower"), upper: simulated("upper"), fill: "var(--generated-median-band-fill)" }] : [])]} />
+  </div>;
 }
 
 const DISTRIBUTION_TOP = 70;

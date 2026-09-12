@@ -1,12 +1,13 @@
 import type { Client } from "@gradio/client";
-import type { DoseEvent, Study } from "./types";
+import type { BlqPoint, DoseEvent, Study } from "./types";
 import { dashboardRuntimeConfig } from "./runtime-config";
 
-export type ModelId = "pythia" | "pythia_dose";
+export type ModelId = "pythia" | "pythia_dose" | "pythia_covariates";
 
 export type InferenceRequest = {
   modelId: ModelId;
-  study: Pick<Study, "id" | "drug" | "study" | "source" | "route" | "dose" | "doseUnit" | "doseEvents" | "concentrationUnit" | "timeUnit" | "subjects">;
+  targetCovariates?: Record<string, number | string>[];
+  study: Pick<Study, "id" | "drug" | "study" | "source" | "route" | "dose" | "doseUnit" | "doseEvents" | "concentrationUnit" | "timeUnit" | "subjects" | "assay">;
   doseEvents: DoseEvent[];
   nDraws: number;
   batchSize: number;
@@ -24,6 +25,7 @@ export type InferenceResponse = {
   vpc: {
     method: "mesh_bootstrap" | "pharmpy"; // Accept archived responses during rollout.
     methodVersion?: string;
+    censoring?: { methodVersion: string; lloq: number };
     timeBinning?: "query_mesh" | "equal_number";
     generatedIndividuals: number;
     simulatedCohortReplicates: number;
@@ -34,8 +36,9 @@ export type InferenceResponse = {
       timeLower: number;
       timeUpper: number;
       nObservations: number;
-      observed: { q05: number; q50: number; q95: number };
-      simulated: Record<"q05" | "q50" | "q95", { center: number; lower: number; upper: number }>;
+      observed: { q05: number | null; q50: number | null; q95: number | null };
+      blq?: BlqPoint;
+      simulated: Record<"q05" | "q50" | "q95", { center: number | null; lower: number | null; upper: number | null; lowerCensored?: boolean }>;
     }>;
   };
   units: { time: string; concentration: string };

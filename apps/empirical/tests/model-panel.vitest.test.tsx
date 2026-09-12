@@ -15,6 +15,7 @@ vi.mock("../app/lib/model-api", () => ({
     models: {
       pythia: { ready: true, loaded: false, device: "cpu", checkpointId: "digital.ckpt", modelId: "pythia", label: "Pythia", supportsDose: false },
       pythia_dose: { ready: true, loaded: true, device: "cpu", checkpointId: "dose.ckpt", modelId: "pythia_dose", label: "Pythia-Dose", supportsDose: true },
+      pythia_covariates: { ready: true, loaded: true, device: "cpu", checkpointId: "covariates.ckpt", modelId: "pythia_covariates", label: "Pythia-Covariates", supportsDose: true },
     },
   }),
 }));
@@ -93,6 +94,67 @@ test("study labels add dose only when one analyte has multiple datasets", () => 
   expect(studyLabel(study, [study])).toBe("test drug");
   expect(studyLabel(study, [study, secondDose])).toBe("test drug — 10 mg");
   expect(studyLabel(secondDose, [study, secondDose])).toBe("test drug — 20 mg");
+});
+
+test("Pythia-Covariates sends patient covariates and assay annotations", async () => {
+  mocks.runInference.mockResolvedValue(response);
+  const cohort: Study = { ...study, assay: { lloq: 0.1, source: "test" },
+    subjects: study.subjects.map((subject) => ({ ...subject, covariates: { weight_kg: 70 }, cens: [0, 1] })),
+  };
+  render(<ModelPanel study={cohort} onResult={vi.fn()} />);
+  await screen.findByRole("option", { name: "Pythia-Covariates" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), "pythia_covariates");
+  const run = screen.getByRole("button", { name: "Run model" }) as HTMLButtonElement;
+  await waitFor(() => expect(run.disabled).toBe(false));
+  await userEvent.click(run);
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  const request = mocks.runInference.mock.calls[0][0];
+  expect(request.modelId).toBe("pythia_covariates");
+  expect(request.study.subjects).toEqual(cohort.subjects);
+  expect(request.study.assay).toEqual(cohort.assay);
+});
+
+test("target table sends independent rows, resizes, and hides absent covariates", async () => {
+  mocks.runInference.mockResolvedValue(response);
+  const cohort: Study = { ...study, subjects: study.subjects.map((s) => ({ ...s, covariates: { sex: "female", weight_kg: 70 } })) };
+  render(<ModelPanel study={cohort} onResult={vi.fn()} />);
+  expect(screen.queryByText("Advanced · individual covariates")).toBeNull();
+  await screen.findByRole("option", { name: "Pythia-Covariates" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), "pythia_covariates");
+  await userEvent.click(screen.getByText("Advanced · individual covariates"));
+  expect(screen.queryByRole("spinbutton", { name: /Age/ })).toBeNull();
+  const count = screen.getByRole("spinbutton", { name: "Generated individuals" });
+  await userEvent.clear(count); await userEvent.type(count, "2");
+  expect(screen.queryByLabelText("Individual 3 Sex")).toBeNull();
+  await userEvent.selectOptions(screen.getByLabelText("Individual 1 Sex"), "female");
+  await userEvent.clear(screen.getByLabelText("Individual 2 Weight (kg)"));
+  await userEvent.type(screen.getByLabelText("Individual 2 Weight (kg)"), "85");
+  await userEvent.click(screen.getByRole("button", { name: "Run model" }));
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0].targetCovariates).toEqual([{ sex: "female", weight_kg: 70 }, { sex: "female", weight_kg: 85 }]);
+});
+
+test("no target table when context has no covariates", async () => {
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
+  await screen.findByRole("option", { name: "Pythia-Covariates" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), "pythia_covariates");
+  expect(screen.queryByText("Advanced · individual covariates")).toBeNull();
+});
+
+test("Pythia-Covariates uses a shared repeated-dose history stored per patient", async () => {
+  mocks.runInference.mockResolvedValue(response);
+  const events = [{ time: 0, amount: 10, unit: "mg", route: "oral" }, { time: 12, amount: 10, unit: "mg", route: "oral" }];
+  const cohort: Study = { ...study, doseEvents: undefined,
+    subjects: study.subjects.map((subject) => ({ ...subject, doseEvents: events })),
+  };
+  render(<ModelPanel study={cohort} onResult={vi.fn()} />);
+  await screen.findByRole("option", { name: "Pythia-Covariates" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), "pythia_covariates");
+  const run = screen.getByRole("button", { name: "Run model" }) as HTMLButtonElement;
+  await waitFor(() => expect(run.disabled).toBe(false));
+  await userEvent.click(run);
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0].doseEvents).toMatchObject(events);
 });
 
 test("Wikipedia extracts are reduced to the first paragraph", () => {
@@ -185,7 +247,7 @@ test("exposes only conservative public inference controls", async () => {
   expect(screen.queryByLabelText("Integrator")).toBeNull();
   expect(screen.queryByLabelText("Integration steps")).toBeNull();
   expect(screen.queryByLabelText("Checkpoint")).toBeNull();
-  expect((screen.getByLabelText("Random seed") as HTMLInputElement).valueAsNumber).toBe(43);
+  expect((screen.getByLabelText("Random seed") as HTMLInputElement).valueAsNumber).toBe(9877795);
   expect(screen.queryByRole("button", { name: "Resample" })).toBeNull();
   expect((screen.getByLabelText("Models") as HTMLSelectElement).value).toBe("pythia");
 });
@@ -229,7 +291,8 @@ test("Pythia is generation-only and sends the baseline protocol", async () => {
     ...response,
     request: { ...response.request, modelId: "pythia" },
   });
-  render(<ModelPanel study={study} onResult={vi.fn()} />);
+  const assayed = { ...study, assay: { lloq: .2, source: "test assay" } };
+  render(<ModelPanel study={assayed} onResult={vi.fn()} />);
 
   expect(screen.queryByRole("button", { name: "+ Add intervention" })).toBeNull();
   expect(screen.queryByLabelText("Dose 1 amount in mg")).toBeNull();
@@ -240,7 +303,8 @@ test("Pythia is generation-only and sends the baseline protocol", async () => {
 
   await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
   await waitFor(() => expect(screen.getByRole("progressbar", { name: "Inference progress" }).getAttribute("aria-valuenow")).toBe("100"));
-  expect(mocks.runInference.mock.calls[0][0].seed).toBe(43);
+  expect(mocks.runInference.mock.calls[0][0].study.assay).toEqual(assayed.assay);
+  expect(mocks.runInference.mock.calls[0][0].seed).toBe(9877795);
   expect(mocks.runInference.mock.calls[0][0].modelId).toBe("pythia");
   expect(mocks.runInference.mock.calls[0][0].doseEvents).toEqual([
     { time: 0, amount: 10, unit: "mg", route: "oral" },

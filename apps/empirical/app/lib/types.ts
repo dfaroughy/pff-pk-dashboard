@@ -11,6 +11,7 @@ export type Study = {
   administeredDrug: string;
   study: string;
   source: string;
+  benchmark?: { provider: string; model: string; description: string; sourceUrl: string };
   route: string;
   dose: number | null;
   doseUnit: string;
@@ -30,4 +31,8 @@ export type Study = {
 export type Corpus = { schemaVersion: number; generatedAt: string; studies: Study[] };
 
 export type PkEstimate = { label: string; symbol: string; value: number | null; unit: string };
-export type VpcPoint = { time: number; q05: number; q50: number; q95: number; n: number };
+export type BlqPoint = {
+  observed: { lower: number; upper: number; nCensored: number; nUnresolved: number };
+  simulated?: { center: number; lower: number; upper: number };
+};
+export type VpcPoint = { time: number; q05: number | null; q50: number | null; q95: number | null; n: number; blq?: BlqPoint };

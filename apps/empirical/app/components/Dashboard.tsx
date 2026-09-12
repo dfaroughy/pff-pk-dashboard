@@ -3,12 +3,17 @@ import { applySyntheticCensoring, drawCensoring, withAssayMetadata } from "../li
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { runInference, serviceStatus, syntheticRequest, type InferenceResponse, type ModelId, type ServiceStatus } from "../lib/model-api";
-import { contextDoseRatio, doseEventDraft, observedProtocol, studyHorizon, validateDoseProtocol, validateInteger, type DoseEventDraft } from "../lib/protocol";
+import { contextDoseRatio, doseEventDraft, observedProtocol, sharedObservedProtocol, studyHorizon, validateDoseProtocol, validateInteger, type DoseEventDraft } from "../lib/protocol";
 import { MAX_UPLOAD_BYTES, parsePkDataset, type UploadRoute } from "../lib/pk-upload";
 import { dashboardRuntimeConfig } from "../lib/runtime-config";
 import type { Corpus, Study } from "../lib/types";
 import { ModelTrajectoryChart, ModelVpcChart, PkDistributionChart, TrajectoryChart, VpcChart } from "./StudyCharts";
 import { SyntheticStudyBuilder } from "./SyntheticStudyBuilder";
+import { CovariateAnalysis } from "./CovariateAnalysis";
+import { PlotScaleToggle } from "./PlotScaleToggle";
+import { TargetPopulationControls } from "./TargetPopulationControls";
+import { sampleTargetPopulation, type PopulationRules } from "../lib/target-population";
+import { TargetCovariateTable, targetColumns, targetPayload, invalidTarget, type TargetDraft } from "./TargetCovariateTable";
 import { CovariateTable, covariateColumns } from "./CovariateTable";
 import type { SyntheticVersion } from "../lib/synthetic-study";
 
@@ -27,6 +32,25 @@ const wikipediaFallbacks: Record<string, string> = {
   "s-methyl-captopril": "captopril",
   "theophylline_multidose": "theophylline",
 };
+
+type SyntheticCohortSelection = SyntheticVersion | string;
+
+function isBuiltInSynthetic(selection: SyntheticCohortSelection): selection is SyntheticVersion {
+  return selection === "v1" || selection === "v6" || selection === "v7";
+}
+
+function ExternalBenchmarkInfo({ study }: { study: Study }) {
+  const benchmark = study.benchmark;
+  if (!benchmark) return null;
+  return <section className={`overview-grid description-overview${covariateColumns(study).length ? " with-covariates" : ""}`}>
+    <article className="card description-card">
+      <div className="section-heading"><h2>{benchmark.provider} benchmark</h2></div>
+      <p>{benchmark.description}</p>
+      <a href={benchmark.sourceUrl} target="_blank" rel="noreferrer">Source · {benchmark.provider} ↗</a>
+    </article>
+    <CovariateTable study={study} />
+  </section>;
+}
 
 export function firstParagraph(extract: string) {
   return extract.split(/\n+/).map((paragraph) => paragraph.trim()).find(Boolean) ?? "";
@@ -96,18 +120,6 @@ function format(value: number | null) {
   if (value === null || !Number.isFinite(value)) return "Not estimable";
   if (Math.abs(value) >= 1e4 || (Math.abs(value) > 0 && Math.abs(value) < 1e-3)) return value.toExponential(3);
   return value.toLocaleString(undefined, { maximumSignificantDigits: 4 });
-}
-
-function PlotScaleToggle({ logY, onChange, plot }: { logY: boolean; onChange: (logY: boolean) => void; plot: string }) {
-  const linear = !logY;
-  return <button
-    className="plot-scale-switch"
-    type="button"
-    role="switch"
-    aria-label={`${plot} linear scale`}
-    aria-checked={linear}
-    onClick={() => onChange(!logY)}
-  ><span>Log</span><i aria-hidden="true" /><span>Lin</span></button>;
 }
 
 export function studyLabel(study: Study, studies: Study[]) {
@@ -240,7 +252,7 @@ export function DatasetUploadDialog({ onClose, onStudy }: {
 }
 
 export function ModelPanel({ study, onResult }: { study: Study; onResult: (result: InferenceResponse | null) => void }) {
-  const individualDosing = !study.doseEvents?.length && study.subjects.some((subject) => subject.doseEvents?.length);
+  const individualDosing = !sharedObservedProtocol(study) && study.subjects.some((subject) => subject.doseEvents?.length);
   const apiRoot = dashboardRuntimeConfig().apiRoot;
   const hosted = !apiRoot.includes("127.0.0.1") && !apiRoot.includes("localhost");
   const protocolUnit = study.dose === null ? "relative exposure" : study.doseUnit;
@@ -255,18 +267,26 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const [nextEventId, setNextEventId] = useState(initialProtocol.length);
   const [draws, setDraws] = useState("20");
   const [modelId, setModelId] = useState<ModelId>("pythia");
+  const [targetDrafts, setTargetDrafts] = useState<TargetDraft[]>([]);
+  const [populationRules, setPopulationRules] = useState<PopulationRules>({});
+  const patientColumns = useMemo(() => targetColumns(study), [study]);
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [seed, setSeed] = useState("43");
+  const [seed, setSeed] = useState("9877795");
   const maxDraws = modelId === "pythia" ? 100 : 30;
   const eligible = study.subjects.filter((subject) => subject.points.length >= 2).length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
   const drawsError = validateInteger(draws, 1, maxDraws);
   const seedError = validateInteger(seed, 0, 2**31 - 1);
-  const controlsValid = (modelId === "pythia" || (!individualDosing && protocol.valid)) && !drawsError && !seedError;
+  const targetCount = Number.isInteger(Number(draws)) ? Math.max(0, Math.min(30, Number(draws))) : 0;
+  const population = useMemo(() => sampleTargetPopulation(study, patientColumns, populationRules, targetCount, Number(seed)), [study, patientColumns, populationRules, targetCount, seed]);
+  const effectiveTargets = population.rows.map((row, i) => ({ ...row, ...targetDrafts[i] }));
+  const targetsInvalid = modelId === "pythia_covariates" && (Boolean(population.error) || effectiveTargets.some((row) =>
+    patientColumns.some((column) => invalidTarget(row[column.key] ?? "", column))));
+  const controlsValid = (modelId === "pythia" || (!individualDosing && protocol.valid)) && !drawsError && !seedError && !targetsInvalid;
   const selectedStatus = status?.models?.[modelId]
     ?? (modelId === (status?.defaultModelId ?? "pythia_dose") ? status : null);
   useEffect(() => {
@@ -320,7 +340,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const selectModel = (nextModel: ModelId) => {
     if (nextModel === modelId) return;
     setModelId(nextModel);
-    if (nextModel === "pythia_dose" && Number(draws) > 30) setDraws("30");
+    if (nextModel !== "pythia" && Number(draws) > 30) setDraws("30");
     setEvents(resetDrafts());
     invalidate();
   };
@@ -342,12 +362,13 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
       };
       const nextResult = await runInference({
         modelId,
+        ...(modelId === "pythia_covariates" ? { targetCovariates: targetPayload(effectiveTargets, patientColumns, Number(draws)) } : {}),
         study: {
           id: study.id, drug: study.drug, study: study.study, source: study.source,
           route: study.route, dose: study.dose, doseUnit: protocolUnit,
           doseEvents: study.doseEvents,
           concentrationUnit: study.concentrationUnit, timeUnit: study.timeUnit,
-          subjects: study.subjects,
+          subjects: study.subjects, assay: study.assay,
         },
         doseEvents: modelId === "pythia" ? [generationOnlyEvent] : protocol.events,
         nDraws: Number(draws),
@@ -384,6 +405,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
         <select aria-label="Models" value={modelId} onChange={(event) => selectModel(event.target.value as ModelId)}>
           <option value="pythia">Pythia</option>
           <option value="pythia_dose">Pythia-Dose</option>
+          {status?.models?.pythia_covariates && <option value="pythia_covariates">Pythia-Covariates</option>}
         </select>
       </label>
       <div className="model-controls">
@@ -391,7 +413,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
         <label className={seedError ? "invalid" : ""}>Seed <input aria-label="Random seed" aria-invalid={Boolean(seedError)} type="number" min="0" max={2**31 - 1} step="1" value={seed} onChange={(event) => { setSeed(event.target.value); invalidate(); }} />{seedError && <small className="field-error">{seedError}</small>}</label>
       </div>
     </div>
-    {modelId === "pythia_dose" && !individualDosing && <><div className="event-list">
+    {modelId !== "pythia" && !individualDosing && <><div className="event-list">
       {events.map((event, index) => {
         const eventErrors = protocol.errors[event.id] ?? {};
         const ratio = contextDoseRatio(event.amount, referenceDose);
@@ -406,10 +428,19 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
       {!events.length && <p className="empty-protocol">Add at least one dose event.</p>}
     </div>
     <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div></>}
+    {modelId === "pythia_covariates" && <TargetPopulationControls study={study} columns={patientColumns} rules={populationRules}
+      onChange={(key, rule) => { setPopulationRules(current => ({ ...current, [key]: rule })); setTargetDrafts([]); invalidate(); }} />}
+    {modelId === "pythia_covariates" && <TargetCovariateTable columns={patientColumns} rows={effectiveTargets} count={targetCount}
+      onChange={(index, key, value) => {
+        setTargetDrafts((current) => Array.from({ length: Math.max(current.length, index + 1) }, (_, i) =>
+          i === index ? { ...current[i], [key]: value } : current[i] ?? {}));
+        invalidate();
+      }} />}
+    {targetsInvalid && <p className="model-error">{population.error || "Enter valid target covariates; age, weight, height and function ratios must be positive."}</p>}
     {!eligible && <p className="model-warning">Interactive Pythia-PK inference requires at least two individual trajectories.</p>}
     {!selectedStatus?.ready && <p className="model-warning">{hosted ? "The hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
-    {modelId === "pythia_dose" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
-    {modelId === "pythia_dose" && eligible && study.dose === null && !individualDosing && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
+    {modelId !== "pythia" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
+    {modelId !== "pythia" && eligible && study.dose === null && !individualDosing && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
   </section>;
 }
@@ -487,10 +518,11 @@ export function VpcPanel({ study, result, logY, onLogY }: {
   const [numBins, setNumBins] = useState<number | undefined>();
   const [draft, setDraft] = useState<string | null>(null);
   const [autoBins, setAutoBins] = useState<number | undefined>();
-  const [rebinned, setRebinned] = useState<{ source: InferenceResponse; bins: number; vpc: InferenceResponse["vpc"] } | null>(null);
+  const [rebinned, setRebinned] = useState<{ source: InferenceResponse; bins: number | undefined; vpc: InferenceResponse["vpc"] } | null>(null);
   const [error, setError] = useState("");
+  const needsCensoring = Boolean(study.assay && result && !result.vpc.censoring);
   useEffect(() => {
-    if (!result || numBins === undefined) return;
+    if (!result || (numBins === undefined && !needsCensoring)) return;
     const abort = new AbortController();
     const timer = setTimeout(() => {
       setError("");
@@ -498,14 +530,15 @@ export function VpcPanel({ study, result, logY, onLogY }: {
         action: "vpc", study, numBins,
         queryTime: result.queryTime, generatedConcentration: result.generatedConcentration,
       }, abort.signal).then(vpc => {
+        if (study.assay && !vpc.censoring) throw new Error("The VPC service needs the assay-censoring update.");
         if (!abort.signal.aborted) setRebinned({ source: result, bins: numBins, vpc });
       }).catch(reason => {
         if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : "VPC rebinning failed");
       });
     }, 250);
     return () => { clearTimeout(timer); abort.abort(); };
-  }, [study, result, numBins]);
-  const displayed = result && numBins !== undefined
+  }, [study, result, numBins, needsCensoring]);
+  const displayed = result && (numBins !== undefined || needsCensoring)
     ? { ...result, vpc: rebinned?.source === result && rebinned.bins === numBins ? rebinned.vpc : { ...result.vpc, points: [] } }
     : result;
   const first = study.subjects[0]?.points ?? [];
@@ -552,7 +585,7 @@ export function Dashboard() {
   const [uploadOpen, setUploadOpen] = useState(initialMode === "upload");
   const [syntheticMode, setSyntheticMode] = useState(initialMode === "synthetic");
   const [syntheticStudy, setSyntheticStudy] = useState<Study | null>(null);
-  const [syntheticVersion, setSyntheticVersion] = useState<SyntheticVersion>("v6");
+  const [syntheticSelection, setSyntheticSelection] = useState<SyntheticCohortSelection>("v7");
   const [syntheticStale, setSyntheticStale] = useState(false);
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
   const [vpcLogY, setVpcLogY] = useState(false);
@@ -564,9 +597,19 @@ export function Dashboard() {
   const [showLatent, setShowLatent] = useState(false);
   useEffect(() => { fetch(dashboardRuntimeConfig().corpusUrl).then((response) => response.json()).then(setCorpus); }, []);
   if (!corpus) return <main className="loading"><div className="loading-mark" />Loading PK catalogue…</main>;
-  const studies = customStudy ? [customStudy, ...corpus.studies] : corpus.studies;
+  const externalSyntheticStudies = corpus.studies.filter((study) => study.benchmark);
+  const catalogueStudies = corpus.studies.filter((study) => !study.benchmark);
+  const studies = customStudy ? [customStudy, ...catalogueStudies] : catalogueStudies;
   const selected = withAssayMetadata(studies.find((study) => study.id === selectedId) ?? studies[0]);
-  const activeStudy = syntheticMode ? (syntheticStudy && assayLimit !== null ? applySyntheticCensoring(syntheticStudy, assayLimit) : syntheticStudy) : selected;
+  const builtInSynthetic = isBuiltInSynthetic(syntheticSelection);
+  const externalSyntheticStudy = builtInSynthetic ? null : externalSyntheticStudies.find(
+    (study) => study.id === syntheticSelection,
+  ) ?? null;
+  const activeStudy = syntheticMode
+    ? builtInSynthetic
+      ? (syntheticStudy && assayLimit !== null ? applySyntheticCensoring(syntheticStudy, assayLimit) : syntheticStudy)
+      : externalSyntheticStudy
+    : selected;
   const setAssaySensitivity = (ratio: number) => {
     if (!syntheticStudy || !Number.isFinite(ratio) || ratio < 1 || ratio > 10000) return;
     const maximum = Math.max(...syntheticStudy.subjects.flatMap((s) => s.points.map(([, c]) => c)));
@@ -575,7 +618,7 @@ export function Dashboard() {
     if (assayLimit !== null) setAssayLimit(maximum / ratio);
     setModelResult(null);
   };
-  const modelLabel = modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
+  const modelLabel = modelResult?.request.modelId === "pythia_covariates" ? "Pythia-Covariates" : modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
   return <div className="dashboard-shell" data-theme={darkMode ? "dark" : "light"}>
     <header className="topbar">
       <div className="workspace-title">{syntheticMode ? "Synthetic Cohorts" : "Empirical Cohorts"}</div>
@@ -585,11 +628,30 @@ export function Dashboard() {
     </header>
     <div className="workspace">
       <main className="content">
-        {syntheticMode && <section className="empirical-cohort-bar synthetic-prior-selector"><div className="cohort-selector"><label>Synthetic prior
-          <select aria-label="Synthetic dataset version" value={syntheticVersion} onChange={e => {
-            setSyntheticVersion(e.target.value as SyntheticVersion); setSyntheticStale(true); setModelResult(null);
-          }}><option value="v1">v1 · Original linear model</option><option value="v6">v6 · General compartment models</option><option value="v7">v7 · Physiological patients</option></select>
-        </label></div></section>}
+        {syntheticMode && <section className="empirical-cohort-bar synthetic-prior-selector"><div className="cohort-selector"><label>Synthetic cohort
+          <select aria-label="Synthetic cohort" value={syntheticSelection} onChange={e => {
+            const next = e.target.value as SyntheticCohortSelection;
+            setSyntheticSelection(next); setSyntheticStale(isBuiltInSynthetic(next)); setModelResult(null);
+          }}>
+            <optgroup label="Built-in priors">
+              <option value="v1">v1 · Original linear model</option>
+              <option value="v6">v6 · General compartment models</option>
+              <option value="v7">v7 · Physiological patients</option>
+            </optgroup>
+            <optgroup label="External simulated benchmarks">
+              {externalSyntheticStudies.map((study) => <option key={study.id} value={study.id}>
+                {study.benchmark?.provider} · {study.study.replace(/^.* · /, "")}
+              </option>)}
+            </optgroup>
+          </select>
+        </label></div>
+          {externalSyntheticStudy && <section className="study-meta" aria-label="External benchmark summary"><dl>
+            <div><dt>Source</dt><dd>{externalSyntheticStudy.benchmark?.provider}</dd></div>
+            <div><dt>Route</dt><dd>{externalSyntheticStudy.route}</dd></div>
+            <div><dt>Individuals</dt><dd>{externalSyntheticStudy.subjects.length}</dd></div>
+            <div><dt>Matrix</dt><dd>{externalSyntheticStudy.medium}</dd></div>
+          </dl></section>}
+        </section>}
         {!syntheticMode && <section className="empirical-cohort-bar">
           <CohortSelector studies={studies} selected={selected} onSelect={(study) => {
             setSyntheticMode(false);
@@ -607,13 +669,13 @@ export function Dashboard() {
           </section>
         </section>}
         {activeStudy && (!syntheticMode || !syntheticStale)
-          ? <ModelPanel key={activeStudy.id} study={activeStudy} onResult={setModelResult} />
+          ? <ModelPanel key={`model:${activeStudy.id}`} study={activeStudy} onResult={setModelResult} />
           : <InactiveModelPanel stale={syntheticStale} />}
         {activeStudy ? <>
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">
               <div className="card-heading"><h2>Individuals <span className="individual-count">N={activeStudy.subjects.length}</span></h2><div className="chart-actions"><span className="legend">{modelResult && <><span className="legend-item"><i className="red-line" />{modelLabel}</span></>}<span className="legend-item"><i className="blue-line" />Study</span></span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
-              {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} showLatent={showLatent && syntheticMode} />}
+              {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} showLatent={showLatent && builtInSynthetic} />}
               {modelResult && <p className="assay-caption">Generated individuals use the context patients’ observation schedules, repeated across the generated cohort.</p>}
               <IndividualsCaption study={activeStudy} result={modelResult} />
             </article>
@@ -623,10 +685,11 @@ export function Dashboard() {
             </article>
           </section>
         </> : <SyntheticResultsPlaceholder />}
-        {syntheticMode ? <section className="overview-grid synthetic-overview">
+        {activeStudy && (!syntheticMode || !syntheticStale) && <CovariateAnalysis key={`covariate-analysis:${activeStudy.id}`} study={activeStudy} result={modelResult} />}
+        {syntheticMode && builtInSynthetic ? <section className="overview-grid synthetic-overview">
           <SyntheticStudyBuilder
-            key={syntheticVersion}
-            version={syntheticVersion}
+            key={syntheticSelection}
+            version={syntheticSelection}
             censoringControls={<>
               <div className="synthetic-protocol-heading"><div className="synthetic-schedule-controls">
                 <label>Censoring <select aria-label="Censoring enabled" value={assayLimit === null ? "false" : "true"} onChange={(e) => {
@@ -649,9 +712,9 @@ export function Dashboard() {
               setSyntheticStudy(study); setSyntheticStale(false); setModelResult(null);
             }}
           />
-        </section> : <section className={`overview-grid description-overview${covariateColumns(selected).length ? " with-covariates" : ""}`}>
+        </section> : syntheticMode ? (externalSyntheticStudy && <ExternalBenchmarkInfo study={externalSyntheticStudy} />) : <section className={`overview-grid description-overview${covariateColumns(selected).length ? " with-covariates" : ""}`}>
           <article className="card description-card"><WikipediaDescription key={selected.id} study={selected} />
-            {selected.assay && <p className="assay-caption">LLOQ {selected.assay.lloq.toPrecision(3)} {selected.concentrationUnit} · {selected.assay.source}. Hollow markers: unresolved censoring. VPC is descriptive. Pythia and Pythia-Dose predictions are not censoring-aware.</p>}
+            {selected.assay && <p className="assay-caption">LLOQ {selected.assay.lloq.toPrecision(3)} {selected.concentrationUnit} · {selected.assay.source}. Hollow markers: unresolved censoring. The VPC accounts for assay censoring; model inference still uses the reported concentrations.</p>}
           </article>
           <CovariateTable study={selected} />
         </section>}
