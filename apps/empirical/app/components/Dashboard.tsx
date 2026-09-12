@@ -580,6 +580,8 @@ function IndividualsCaption({ study, result }: {
 
 export function Dashboard() {
   const [corpus, setCorpus] = useState<Corpus | null>(null);
+  const [corpusError, setCorpusError] = useState(false);
+  const [corpusAttempt, setCorpusAttempt] = useState(0);
   const [customStudy, setCustomStudy] = useState<Study | null>(null);
   const initialMode = typeof window === "undefined" ? null : /\/synthetic(?:\/|\/index\.html)?$/.test(window.location.pathname) ? "synthetic" : new URLSearchParams(window.location.search).get("mode");
   const [uploadOpen, setUploadOpen] = useState(initialMode === "upload");
@@ -595,7 +597,24 @@ export function Dashboard() {
   const [assayLimit, setAssayLimit] = useState<number | null>(null);
   const [sensitivity, setSensitivity] = useState(67);
   const [showLatent, setShowLatent] = useState(false);
-  useEffect(() => { fetch(dashboardRuntimeConfig().corpusUrl).then((response) => response.json()).then(setCorpus); }, []);
+  useEffect(() => {
+    const abort = new AbortController();
+    const timeout = setTimeout(() => abort.abort(), 20000);
+    let active = true;
+    void fetch(dashboardRuntimeConfig().corpusUrl, { signal: abort.signal })
+      .then(response => {
+        if (!response.ok) throw new Error("Catalogue request failed");
+        return response.json();
+      })
+      .then(data => {
+        if (!Array.isArray(data?.studies) || !data.studies.length) throw new Error("Invalid catalogue");
+        if (active) setCorpus(data);
+      })
+      .catch(() => { if (active) setCorpusError(true); })
+      .finally(() => clearTimeout(timeout));
+    return () => { active = false; clearTimeout(timeout); abort.abort(); };
+  }, [corpusAttempt]);
+  if (!corpus && corpusError) return <main className="loading"><p role="alert">Could not load the PK catalogue.</p><button type="button" className="secondary-button" onClick={() => { setCorpusError(false); setCorpusAttempt(n => n + 1); }}>Retry</button></main>;
   if (!corpus) return <main className="loading"><div className="loading-mark" />Loading PK catalogue…</main>;
   const externalSyntheticStudies = corpus.studies.filter((study) => study.benchmark);
   const catalogueStudies = corpus.studies.filter((study) => !study.benchmark);

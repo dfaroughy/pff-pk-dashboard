@@ -30,10 +30,22 @@ vi.mock("../app/components/StudyCharts", () => ({
 const { Dashboard } = await import("../app/components/Dashboard");
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+test("failed catalogue requests show a retry instead of an endless loader", async () => {
+  window.history.replaceState(null, "", "/synthetic/");
+  const fetcher = vi.fn().mockResolvedValueOnce({ ok: false })
+    .mockResolvedValue({ ok: true, json: async () => ({ studies: [state.study] }) });
+  vi.stubGlobal("fetch", fetcher);
+  render(<Dashboard />);
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByRole("button", { name: "Test new cohort" });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
 test("repeated synthetic draws retain exactly one model panel without duplicate keys", async () => {
   window.history.replaceState(null, "", "/synthetic/");
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: async () => ({ studies: [state.study] }) }));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ studies: [state.study] }) }));
   render(<StrictMode><Dashboard /></StrictMode>);
   await screen.findByRole("button", { name: "Test new cohort" });
   expect((screen.getByLabelText("Synthetic cohort") as HTMLSelectElement).value).toBe("v7");
