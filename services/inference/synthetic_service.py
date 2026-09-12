@@ -402,7 +402,7 @@ def synthetic_request(payload):
     """Bound expensive/unlucky numerical draws; never hang the public service."""
     if isinstance(payload, dict) and payload.get("action") == "vpc":
         from services.inference.pff_service import build_cohort
-        from pff_pk.metrics.dashboard_vpc import dashboard_vpc_summary, observed_vpc_summary
+        from services.inference.censored_vpc import dashboard_vpc_summary, observed_vpc_summary
         cohort = build_cohort(payload.get("study") or {})
         bins = payload.get("numBins")
         if bins is not None:
@@ -410,9 +410,9 @@ def synthetic_request(payload):
         if "generatedConcentration" in payload:
             return dashboard_vpc_summary(
                 payload["generatedConcentration"], payload.get("queryTime"), cohort,
-                num_bins=bins,
+                study=payload.get("study"), num_bins=bins,
             )
-        return observed_vpc_summary(cohort, num_bins=bins)
+        return observed_vpc_summary(cohort, study=payload.get("study"), num_bins=bins)
     if isinstance(payload, dict) and payload.get("action") == "describe":
         return generate(payload)
     result = subprocess.run(

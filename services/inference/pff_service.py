@@ -39,7 +39,7 @@ from pff_pk.inference.empirical import (  # noqa: E402
 )
 from pff_pk.inference.model import load_inference_model  # noqa: E402
 
-from pff_pk.metrics.dashboard_vpc import DASHBOARD_VPC_VERSION, dashboard_vpc_summary  # noqa: E402
+from services.inference.censored_vpc import DASHBOARD_VPC_VERSION, dashboard_vpc_summary  # noqa: E402
 
 DEFAULT_CONFIG = PFF_ROOT / "configs" / "amarel_v6_protocol_counterfactual_phase2_sparse.yaml"
 DEFAULT_CHECKPOINT = (
@@ -160,6 +160,12 @@ def build_cohort(study: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"invalid point for subject {identifier!r}")
             observation_time = finite(point[0], f"subject time {index}")
             concentration = finite(point[1], f"subject concentration {index}")
+            assay = study.get("assay") or {}
+            if concentration == 0 and assay.get("lloq") is not None:
+                limit = finite(assay["lloq"], "assay LLOQ")
+                if limit <= 0:
+                    raise ValueError("assay LLOQ must be positive")
+                concentration = limit
             if observation_time >= 0 and concentration > 0:
                 points.append((observation_time, concentration))
         if identifier and len(points) >= 2:
@@ -403,6 +409,7 @@ class ModelRuntime:
             samples,
             query_time,
             cohort,
+            study=request.get("study"),
             replicates=VPC_REPLICATES,
             seed=seed + VPC_SEED_OFFSET,
         )
@@ -496,7 +503,7 @@ def cached_inference(request: dict[str, Any]) -> dict[str, Any]:
     runtime = runtime_for_request(request)
     runtime.load()
     cache_key = {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "vpcVersion": DASHBOARD_VPC_VERSION,
         "request": request,
         "checkpointSha256": runtime.checkpoint_sha256,

@@ -69,6 +69,7 @@ def build_bundle(pff_repo: Path, synthetic_repo: Path, output: Path) -> Path:
         service = stage / "services" / "inference"
         service.mkdir(parents=True)
         shutil.copy2(here.parent / "inference" / "pff_service.py", service / "pff_service.py")
+        shutil.copy2(here.parent / "inference" / "censored_vpc.py", service / "censored_vpc.py")
         shutil.copy2(here.parent / "inference" / "synthetic_service.py", service / "synthetic_service.py")
         (stage / "services" / "__init__.py").touch()
         (service / "__init__.py").touch()
