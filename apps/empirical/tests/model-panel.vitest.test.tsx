@@ -235,6 +235,11 @@ afterEach(() => {
   mocks.runInference.mockReset();
 });
 
+test("accepts the empirical page default seed", () => {
+  render(<ModelPanel study={study} onResult={vi.fn()} initialSeed={420} />);
+  expect((screen.getByLabelText("Random seed") as HTMLInputElement).valueAsNumber).toBe(420);
+});
+
 test("exposes only conservative public inference controls", async () => {
   render(<ModelPanel study={study} onResult={vi.fn()} />);
 

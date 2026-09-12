@@ -251,7 +251,7 @@ export function DatasetUploadDialog({ onClose, onStudy }: {
   </div>;
 }
 
-export function ModelPanel({ study, onResult }: { study: Study; onResult: (result: InferenceResponse | null) => void }) {
+export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: Study; onResult: (result: InferenceResponse | null) => void; initialSeed?: number }) {
   const individualDosing = !sharedObservedProtocol(study) && study.subjects.some((subject) => subject.doseEvents?.length);
   const apiRoot = dashboardRuntimeConfig().apiRoot;
   const hosted = !apiRoot.includes("127.0.0.1") && !apiRoot.includes("localhost");
@@ -274,7 +274,7 @@ export function ModelPanel({ study, onResult }: { study: Study; onResult: (resul
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [seed, setSeed] = useState("9877795");
+  const [seed, setSeed] = useState(String(initialSeed));
   const maxDraws = modelId === "pythia" ? 100 : 30;
   const eligible = study.subjects.filter((subject) => subject.points.length >= 2).length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
@@ -669,7 +669,7 @@ export function Dashboard() {
           </section>
         </section>}
         {activeStudy && (!syntheticMode || !syntheticStale)
-          ? <ModelPanel key={`model:${activeStudy.id}`} study={activeStudy} onResult={setModelResult} />
+          ? <ModelPanel key={`model:${activeStudy.id}`} study={activeStudy} onResult={setModelResult} initialSeed={syntheticMode ? 9877795 : 420} />
           : <InactiveModelPanel stale={syntheticStale} />}
         {activeStudy ? <>
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
