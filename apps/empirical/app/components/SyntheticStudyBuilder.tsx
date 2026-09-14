@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { GenericCovariates } from "./GenericCovariates";
+import { NumericEdit } from "./NumericEdit";
 import type { Study } from "../lib/types";
 import { syntheticRequest } from "../lib/model-api";
 import {
@@ -50,49 +51,6 @@ function ValueTable({ value }: { value: Record<string, unknown> }) {
         </tbody>
       </table>
     </div>
-  );
-}
-
-function NumericEdit({
-  id,
-  label,
-  value,
-  min,
-  max,
-  disabled,
-  onCommit,
-}: {
-  id?: string;
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  disabled: boolean;
-  onCommit: (value: number) => void;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  return (
-    <input
-      id={id}
-      aria-label={label}
-      type="number"
-      step="any"
-      min={min}
-      max={max}
-      disabled={disabled}
-      value={draft ?? value}
-      onChange={(e) => {
-        const text = e.target.value;
-        setDraft(text);
-        const number = Number(text);
-        if (text.trim() && Number.isFinite(number) && number >= min && number <= max && number !== value)
-          onCommit(number);
-      }}
-      onBlur={() => setDraft(null)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-      }}
-    />
   );
 }
 
@@ -242,12 +200,12 @@ export function SyntheticStudyBuilder({
   }, [description, version, seed, individuals, observations, schedule, shape,
     gridSeed, mlpSeed, overrides, kineticEdits, doseEdits]);
 
-  const invalidate = () => {
+  const invalidate = useCallback(() => {
     controller.current?.abort();
     setBusy(true);
     setError("");
     onInvalidate();
-  };
+  }, [onInvalidate]);
   const sampleNewModel = (applyGraph = false) => {
     if (applyGraph) setOverrides((current) => ({ ...current, ...graphOverrides }));
     newDraw.current = true;
@@ -279,18 +237,15 @@ export function SyntheticStudyBuilder({
               {c.label}
               <div className="prior-range-inputs">
                 {(Array.isArray(value) ? value : [value]).map((v, i) => (
-                  <input
+                  <NumericEdit
                     key={i}
-                    aria-label={`${c.label}${Array.isArray(value) ? (i === 0 ? " minimum" : " maximum") : ""}`}
-                    type="number"
+                    label={`${c.label}${Array.isArray(value) ? (i === 0 ? " minimum" : " maximum") : ""}`}
                     min={c.min}
                     max={c.max}
-                    step={c.integer ? 1 : "any"}
+                    integer={c.integer}
                     disabled={!description}
                     value={v}
-                    onChange={(e) => {
-                      const number = Number(e.target.value);
-                      if (!Number.isFinite(number)) return;
+                    onCommit={(number) => {
                       (staged ? setGraphOverrides : setOverrides)((current) => ({
                         ...current,
                         [c.path]: Array.isArray(value)
@@ -344,55 +299,50 @@ export function SyntheticStudyBuilder({
         <h2>Synthetic cohort model · {version}</h2>
       </div>
       <div className="synthetic-generate-controls">
-        <label>
+        <label htmlFor="synthetic-individuals">
           Individuals
-          <input
-            aria-label="Cohort individuals"
-            type="number"
-            min="2"
-            max="100"
+          <NumericEdit
+            id="synthetic-individuals"
+            label="Cohort individuals"
+            integer
+            min={2}
+            max={100}
             disabled={!description}
             value={individuals}
-            onChange={(e) => {
-              const next = Math.max(2, Math.min(100, Math.round(Number(e.target.value))));
-              if (!Number.isFinite(next) || next === individuals) return;
+            onCommit={(next) => {
               setIndividuals(next);
               invalidate();
             }}
           />
         </label>
-        <label>
+        <label htmlFor="synthetic-observations">
           Observations per individual
-          <input
-            type="number"
-            min="2"
-            max="20"
+          <NumericEdit
+            id="synthetic-observations"
+            label="Observations per individual"
+            integer
+            min={2}
+            max={20}
             disabled={!description}
             value={observations}
-            onChange={(e) => {
-              const next = Math.max(2, Math.min(20, Math.round(Number(e.target.value))));
-              if (!Number.isFinite(next) || next === observations) return;
+            onCommit={(next) => {
               setObservations(next);
               invalidate();
             }}
           />
         </label>
-        <label>
+        <label htmlFor="synthetic-seed">
           Cohort seed
-          <input
-            aria-label="Cohort seed"
-            type="number"
-            min="0"
+          <NumericEdit
+            id="synthetic-seed"
+            label="Cohort seed"
+            integer
+            min={0}
             max={2 ** 31 - 1}
             disabled={!description}
             value={seed}
-            onChange={(e) => {
-              setSeed(
-                Math.max(
-                  0,
-                  Math.min(2 ** 31 - 1, Math.round(Number(e.target.value))),
-                ),
-              );
+            onCommit={(next) => {
+              setSeed(next);
               newDraw.current = true;
               setMlpSeed(null);
               setKineticEdits({});

@@ -1,4 +1,5 @@
 "use client";
+import { NumericEdit } from "./NumericEdit";
 import { applySyntheticCensoring, drawCensoring, withAssayMetadata } from "../lib/censoring";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -531,7 +532,6 @@ export function VpcPanel({ study, result, logY, onLogY }: {
   study: Study; result: InferenceResponse | null; logY: boolean; onLogY: (value: boolean) => void;
 }) {
   const [numBins, setNumBins] = useState<number | undefined>();
-  const [draft, setDraft] = useState<string | null>(null);
   const [autoBins, setAutoBins] = useState<number | undefined>();
   const [rebinned, setRebinned] = useState<{ source: InferenceResponse; bins: number | undefined; vpc: InferenceResponse["vpc"] } | null>(null);
   const [error, setError] = useState("");
@@ -561,15 +561,9 @@ export function VpcPanel({ study, result, logY, onLogY }: {
   const defaultBins = result?.vpc.effectiveBins ?? autoBins ?? (shared ? first.length : Math.max(1, Math.min(8, Math.floor(study.subjects.reduce((n, s) => n + s.points.length, 0) / 10))));
   return <article className="card chart-card">
     <div className="card-heading"><h2>VPC</h2><div className="chart-actions">
-      {study.subjects.length > 0 && <label className="vpc-bin-control">num_bins=
-        <input aria-label="VPC number of bins" type="number" min="1" max="100" step="1"
-          value={draft ?? numBins ?? defaultBins}
-          onChange={event => {
-            const text = event.target.value;
-            setDraft(text);
-            const count = Number(text);
-            if (text.trim() && Number.isInteger(count) && count >= 1 && count <= 100) setNumBins(count);
-          }} onBlur={() => setDraft(null)} />
+      {study.subjects.length > 0 && <label className="vpc-bin-control" htmlFor="vpc-bin-count">num_bins=
+        <NumericEdit id="vpc-bin-count" label="VPC number of bins" min={1} max={100} integer
+          value={numBins ?? defaultBins} onCommit={setNumBins} />
       </label>}
       <VpcLegend result={displayed} empiricalVpc={study.subjects.length > 0} />
       <PlotScaleToggle logY={logY} onChange={onLogY} plot="VPC" />
@@ -731,7 +725,7 @@ export function Dashboard() {
                   setAssayLimit(e.target.value === "true" && maximum > 0 ? maximum / sensitivity : null);
                   setModelResult(null);
                 }}><option value="false">False</option><option value="true">True</option></select></label>
-                <label>Cmax / LLOQ <input aria-label="Assay sensitivity" type="number" min="1" max="10000" value={sensitivity} onChange={(e) => { setAssaySensitivity(Number(e.target.value)); }} /></label>
+                <label htmlFor="assay-sensitivity">Cmax / LLOQ <NumericEdit id="assay-sensitivity" label="Assay sensitivity" min={1} max={10000} value={sensitivity} onCommit={setAssaySensitivity} /></label>
                 <label>Latent curves <select aria-label="Show latent curves" value={String(showLatent)} onChange={(e) => setShowLatent(e.target.value === "true")}><option value="false">Hidden</option><option value="true">Visible</option></select></label>
               </div></div>
             </>}

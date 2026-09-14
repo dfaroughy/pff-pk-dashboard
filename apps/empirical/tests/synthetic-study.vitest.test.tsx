@@ -179,7 +179,7 @@ test("graph starts one zoom step smaller and resets to that size", () => {
   expect(graph.style.width).toBe(initialWidth);
 });
 
-test("automatically updates explicit seed and bounded cohort size", async () => {
+test("updates valid quantities and rejects out-of-range drafts without clamping", async () => {
   const user = userEvent.setup();
   render(<SyntheticStudyBuilder onGenerate={vi.fn()} onInvalidate={vi.fn()} />);
   await ready();
@@ -197,10 +197,20 @@ test("automatically updates explicit seed and bounded cohort size", async () => 
   await ready();
   expect(request.mock.calls.at(-1)![0]).toMatchObject({
     seed: 47,
-    individuals: 100,
+    individuals: 16,
     observations: 20,
     overrides: {},
   });
+  const individuals = screen.getByLabelText("Cohort individuals") as HTMLInputElement;
+  expect(individuals.value).toBe("999");
+  fireEvent.blur(individuals);
+  expect(individuals.value).toBe("999");
+  expect(screen.getByRole("alert").textContent).toContain("Not applied");
+  await user.clear(individuals);
+  expect(individuals.value).toBe("");
+  await user.type(individuals, "50");
+  await ready();
+  expect(request.mock.calls.at(-1)![0].individuals).toBe(50);
 });
 test("honors explicit seed and distinguishes missing patient fields from truth", async () => {
   const user = userEvent.setup();
