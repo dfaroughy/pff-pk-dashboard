@@ -6,6 +6,7 @@ import {
   fluxEquation,
   graphFromResponse,
   SYNTHETIC_INITIAL_SEED,
+  SYNTHETIC_LIMITS,
   type ProfileDescription,
   type SyntheticResponse,
   type SyntheticVersion,
@@ -166,7 +167,7 @@ export function SyntheticStudyBuilder({
   const [draw, setDraw] = useState<SyntheticResponse | null>(null);
   const [seed, setSeed] = useState(SYNTHETIC_INITIAL_SEED);
   const [individuals, setIndividuals] = useState(16);
-  const [observations, setObservations] = useState(8);
+  const [observations, setObservations] = useState(SYNTHETIC_LIMITS.observations.default);
   const [schedule, setSchedule] = useState("exact");
   const [shape, setShape] = useState("early");
   const [gridSeed, setGridSeed] = useState(0);

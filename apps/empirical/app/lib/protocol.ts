@@ -1,12 +1,13 @@
 import type { DoseEvent, Study } from "./types";
 
-export type DoseEventDraft = Omit<DoseEvent, "time" | "amount"> & {
+export type DoseEventDraft = Omit<DoseEvent, "time" | "amount" | "duration"> & {
   id: string;
   time: string;
   amount: string;
+  duration?: string | number;
 };
 
-export type DoseEventErrors = Partial<Record<"time" | "amount", string>>;
+export type DoseEventErrors = Partial<Record<"time" | "amount" | "duration", string>>;
 
 export type ProtocolValidation = {
   events: DoseEvent[];
@@ -65,17 +66,23 @@ export function validateDoseProtocol(drafts: DoseEventDraft[], horizon: number):
     const eventErrors: DoseEventErrors = {};
     const time = finiteNumber(draft.time);
     const amount = finiteNumber(draft.amount);
-    const duration = draft.duration ?? 0;
+    const duration = finiteNumber(String(draft.duration ?? 0));
 
     if (time === null) eventErrors.time = "Enter a time";
     else if (time < 0) eventErrors.time = "Must be at least 0";
-    else if (time + duration > horizon) {
+    else if (time > horizon) {
       const displayedHorizon = horizon.toLocaleString(undefined, { maximumSignificantDigits: 6 });
       eventErrors.time = `Must end by ${displayedHorizon}`;
     }
 
     if (amount === null) eventErrors.amount = "Enter a dose";
     else if (amount <= 0) eventErrors.amount = "Must be greater than 0";
+
+    if (duration === null) eventErrors.duration = "Enter a duration";
+    else if (duration < 0) eventErrors.duration = "Must be at least 0";
+    else if (time !== null && time + duration > horizon) {
+      eventErrors.duration = `Must end by ${horizon.toLocaleString(undefined, { maximumSignificantDigits: 6 })}`;
+    }
 
     if (Object.keys(eventErrors).length) {
       errors[draft.id] = eventErrors;
@@ -86,7 +93,7 @@ export function validateDoseProtocol(drafts: DoseEventDraft[], horizon: number):
       amount: amount as number,
       unit: draft.unit,
       route: draft.route,
-      ...(draft.duration === undefined ? {} : { duration: draft.duration }),
+      ...(draft.duration === undefined ? {} : { duration: duration as number }),
     });
   }
 

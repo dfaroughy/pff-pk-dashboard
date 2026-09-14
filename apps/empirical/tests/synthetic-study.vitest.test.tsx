@@ -137,7 +137,7 @@ test.each(["v1", "v6", "v7"] as const)(
       seed: 9877795,
       individuals: 16,
       schedule: "exact",
-      observations: 8,
+      observations: 20,
     });
     expect(onGenerate.mock.calls[0][0].source).toBe("canonical");
     for (const button of screen.getAllByRole("button").filter(button => button.hasAttribute("aria-expanded"))) {

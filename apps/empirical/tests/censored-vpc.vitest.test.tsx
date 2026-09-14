@@ -2,11 +2,59 @@
 import { afterEach, expect, test } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { observedVpc } from "../app/lib/pk";
-import { ModelVpcChart, VpcChart } from "../app/components/StudyCharts";
+import { ModelTrajectoryChart, ModelVpcChart, VpcChart } from "../app/components/StudyCharts";
 import type { Study } from "../app/lib/types";
 import type { InferenceResponse } from "../app/lib/model-api";
 
 afterEach(cleanup);
+
+test.each([false, true])("covariate trajectories split at LLOQ and keep only quantified markers, log=%s", logY => {
+  const cohort = { ...study, subjects: [{ id: "a", points: [[0, 2], [1, 2], [2, 2], [3, 2], [4, 2]] }] } as Study;
+  const result = {
+    request: { modelId: "pythia_covariates" }, units: { time: "h", concentration: "mg/L" },
+    queryTime: [0, 1, 2, 3, 4], generatedConcentration: [[2, .5, 1, .25, 4]],
+  } as InferenceResponse;
+  const { container } = render(<ModelTrajectoryChart study={cohort} result={result} showEmpirical logY={logY} />);
+  const paths = container.querySelectorAll('path[stroke="var(--generated)"]');
+  expect(paths).toHaveLength(2);
+  expect(paths[0].getAttribute("stroke-dasharray")).toBeNull();
+  expect(paths[1].getAttribute("stroke-dasharray")).toBe("4 3");
+  expect(paths[0].getAttribute("clip-path")).toContain("-above-lloq");
+  expect(paths[1].getAttribute("clip-path")).toContain("-below-lloq");
+  expect(paths[0].getAttribute("d")).toBe(paths[1].getAttribute("d"));
+  const upper = container.querySelector('clipPath[id$="-above-lloq"] rect')!;
+  const lower = container.querySelector('clipPath[id$="-below-lloq"] rect')!;
+  expect(Number(upper.getAttribute("y")) + Number(upper.getAttribute("height"))).toBeCloseTo(Number(lower.getAttribute("y")));
+  const threshold = container.querySelector('line[stroke="var(--assay-amber)"]')!;
+  expect(Number(lower.getAttribute("y"))).toBeCloseTo(Number(threshold.getAttribute("y1")));
+  expect(container.querySelectorAll('circle[fill="var(--generated)"]')).toHaveLength(3);
+  expect(container.querySelectorAll('circle[fill="var(--trajectory-blue)"]')).toHaveLength(5);
+  for (const path of paths) expect(path.getAttribute("d")).not.toMatch(/NaN|Infinity/);
+});
+
+test.each(["pythia", "pythia_dose", "pythia_covariates"])("no-assay %s curves keep their markers and solid line", modelId => {
+  const cohort = { ...study, assay: undefined };
+  const result = {
+    request: { modelId }, units: { time: "h", concentration: "mg/L" },
+    queryTime: [0, 1, 2], generatedConcentration: [[2, .5, 1]],
+  } as InferenceResponse;
+  const { container } = render(<ModelTrajectoryChart study={cohort} result={result} showEmpirical={false} logY={false} />);
+  expect(container.querySelectorAll('path[stroke="var(--generated)"]')).toHaveLength(1);
+  expect(container.querySelector('path[stroke="var(--generated)"]')?.getAttribute("stroke-dasharray")).toBeNull();
+  expect(container.querySelectorAll('circle[fill="var(--generated)"]')).toHaveLength(3);
+});
+
+test("latent context curves remain visible after inference when enabled", () => {
+  const cohort = { ...study, subjects: study.subjects.map(s => ({ ...s, latentPoints: [[0, 2], [1, .5], [2, 4]] as [number, number][] })) };
+  const result = {
+    request: { modelId: "pythia_covariates" }, units: { time: "h", concentration: "mg/L" },
+    queryTime: [0, 1, 2], generatedConcentration: [[2, .5, 1]],
+  } as InferenceResponse;
+  const { container, rerender } = render(<ModelTrajectoryChart study={cohort} result={result} showEmpirical showLatent logY={false} />);
+  expect(container.querySelectorAll('path[stroke="var(--trajectory-blue)"][stroke-dasharray]')).toHaveLength(20);
+  rerender(<ModelTrajectoryChart study={cohort} result={result} showEmpirical showLatent={false} logY={false} />);
+  expect(container.querySelectorAll('path[stroke="var(--trajectory-blue)"][stroke-dasharray]')).toHaveLength(0);
+});
 const study = {
   id: "assay", drug: "test", timeUnit: "h", concentrationUnit: "mg/L", assay: { lloq: 1, source: "test assay" },
   subjects: Array.from({ length: 20 }, (_, i) => ({ id: String(i), points: [[0, 2 + i], [1, i < 12 ? 1 : 3 + i], [2, 4 + i]], cens: [0, i < 12 ? 1 : 0, 0] })), summary: [],

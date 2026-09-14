@@ -7,6 +7,7 @@ export type ModelId = "pythia" | "pythia_dose" | "pythia_covariates";
 export type InferenceRequest = {
   modelId: ModelId;
   targetCovariates?: Record<string, number | string>[];
+  provideLloq?: boolean;
   study: Pick<Study, "id" | "drug" | "study" | "source" | "route" | "dose" | "doseUnit" | "doseEvents" | "concentrationUnit" | "timeUnit" | "subjects" | "assay">;
   doseEvents: DoseEvent[];
   nDraws: number;

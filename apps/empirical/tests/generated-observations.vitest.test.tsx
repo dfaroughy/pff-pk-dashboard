@@ -14,6 +14,7 @@ const study = {
   ],
 } as Study;
 const result = {
+  request: { modelId: "pythia" },
   queryTime: [0.1000000015, 0.200000003, 0.400000006, 0.600000024, 1],
   generatedConcentration: [[10, 20, 30, 40, 50], [11, 21, 31, 41, 51], [12, 22, 32, 42, 52]],
   units: { time: "τ", concentration: "dimensionless" },

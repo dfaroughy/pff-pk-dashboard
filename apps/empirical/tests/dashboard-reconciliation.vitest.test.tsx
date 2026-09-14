@@ -18,7 +18,8 @@ vi.mock("../app/lib/model-api", () => ({
   } }), runInference: vi.fn(), syntheticRequest: vi.fn(),
 }));
 vi.mock("../app/components/SyntheticStudyBuilder", () => ({
-  SyntheticStudyBuilder: ({ onGenerate, onInvalidate }: { onGenerate: (s: unknown) => void; onInvalidate: () => void }) => <>
+  SyntheticStudyBuilder: ({ onGenerate, onInvalidate, censoringControls }: { onGenerate: (s: unknown) => void; onInvalidate: () => void; censoringControls: import("react").ReactNode }) => <>
+    {censoringControls}
     <button onClick={() => onGenerate({ ...state.study, id: `draw-${++state.draw}` })}>Test new cohort</button>
     <button onClick={onInvalidate}>Test invalidate cohort</button>
   </>,
@@ -48,7 +49,8 @@ test("repeated synthetic draws retain exactly one model panel without duplicate 
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ studies: [state.study] }) }));
   render(<StrictMode><Dashboard /></StrictMode>);
   await screen.findByRole("button", { name: "Test new cohort" });
-  expect((screen.getByLabelText("Synthetic cohort") as HTMLSelectElement).value).toBe("v7");
+  expect((screen.getByLabelText("Synthetic cohort") as HTMLSelectElement).value).toBe("v1");
+  expect((screen.getByLabelText("Show latent curves") as HTMLSelectElement).value).toBe("true");
   for (let i = 0; i < 5; i++) {
     await userEvent.click(screen.getByRole("button", { name: "Test new cohort" }));
     await waitFor(() => expect(screen.getAllByRole("combobox", { name: "Models" })).toHaveLength(1));

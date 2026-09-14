@@ -259,14 +259,15 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
   const horizon = studyHorizon(study);
   const referenceDose = study.dose ?? 1;
   const abortRequest = useRef<AbortController | null>(null);
-  const initialProtocol = observedProtocol(study, protocolUnit).map((event, index) => (
-    index === 0 ? { ...event, time: 0 } : event
-  ));
+  const initialProtocol = observedProtocol(study, protocolUnit);
+  const contextProtocolKey = JSON.stringify({ studyId: study.id, events: initialProtocol });
+  const previousContextProtocolKey = useRef(contextProtocolKey);
   const resetDrafts = () => initialProtocol.map((event, index) => doseEventDraft(event, `observed-${index}`));
   const [events, setEvents] = useState<DoseEventDraft[]>(resetDrafts);
   const [nextEventId, setNextEventId] = useState(initialProtocol.length);
   const [draws, setDraws] = useState("20");
   const [modelId, setModelId] = useState<ModelId>("pythia");
+  const provideLloq = Number.isFinite(study.assay?.lloq) && (study.assay?.lloq ?? 0) > 0;
   const [targetDrafts, setTargetDrafts] = useState<TargetDraft[]>([]);
   const [populationRules, setPopulationRules] = useState<PopulationRules>({});
   const patientColumns = useMemo(() => targetColumns(study), [study]);
@@ -275,13 +276,26 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [seed, setSeed] = useState(String(initialSeed));
-  const maxDraws = modelId === "pythia" ? 100 : 30;
+  useEffect(() => {
+    if (previousContextProtocolKey.current === contextProtocolKey) return;
+    previousContextProtocolKey.current = contextProtocolKey;
+    const context = JSON.parse(contextProtocolKey) as { events: typeof initialProtocol };
+    setEvents(context.events.map((event, index) => doseEventDraft(event, `observed-${index}`)));
+    setNextEventId(context.events.length);
+    abortRequest.current?.abort();
+    abortRequest.current = null;
+    setRunning(false);
+    setProgress(0);
+    setError("");
+    onResult(null);
+  }, [contextProtocolKey, onResult]);
+  const maxDraws = modelId === "pythia_dose" ? 30 : 100;
   const eligible = study.subjects.filter((subject) => subject.points.length >= 2).length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
   const drawsError = validateInteger(draws, 1, maxDraws);
   const seedError = validateInteger(seed, 0, 2**31 - 1);
-  const targetCount = Number.isInteger(Number(draws)) ? Math.max(0, Math.min(30, Number(draws))) : 0;
+  const targetCount = Number.isInteger(Number(draws)) ? Math.max(0, Math.min(maxDraws, Number(draws))) : 0;
   const population = useMemo(() => sampleTargetPopulation(study, patientColumns, populationRules, targetCount, Number(seed)), [study, patientColumns, populationRules, targetCount, seed]);
   const effectiveTargets = population.rows.map((row, i) => ({ ...row, ...targetDrafts[i] }));
   const targetsInvalid = modelId === "pythia_covariates" && (Boolean(population.error) || effectiveTargets.some((row) =>
@@ -317,7 +331,7 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
     setError("");
     onResult(null);
   };
-  const change = (id: string, field: "time" | "amount", value: string) => {
+  const change = (id: string, field: "time" | "amount" | "duration", value: string) => {
     if (id === "observed-0" && field === "time") return;
     setEvents((current) => current.map((event) => event.id === id ? { ...event, [field]: value } : event));
     invalidate();
@@ -340,7 +354,7 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
   const selectModel = (nextModel: ModelId) => {
     if (nextModel === modelId) return;
     setModelId(nextModel);
-    if (nextModel !== "pythia" && Number(draws) > 30) setDraws("30");
+    if (nextModel === "pythia_dose" && Number(draws) > 30) setDraws("30");
     setEvents(resetDrafts());
     invalidate();
   };
@@ -362,7 +376,7 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
       };
       const nextResult = await runInference({
         modelId,
-        ...(modelId === "pythia_covariates" ? { targetCovariates: targetPayload(effectiveTargets, patientColumns, Number(draws)) } : {}),
+        ...(modelId === "pythia_covariates" ? { provideLloq, targetCovariates: targetPayload(effectiveTargets, patientColumns, Number(draws)) } : {}),
         study: {
           id: study.id, drug: study.drug, study: study.study, source: study.source,
           route: study.route, dose: study.dose, doseUnit: protocolUnit,
@@ -422,6 +436,7 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
           <label className={eventErrors.time ? "invalid" : ""}>Time ({study.timeUnit}) <input aria-label={`Dose ${index + 1} time in ${study.timeUnit}`} aria-invalid={Boolean(eventErrors.time)} type="number" min="0" max={horizon} step="any" value={event.time} disabled={index === 0} onChange={(e) => change(event.id, "time", e.target.value)} />{eventErrors.time && <small className="field-error">{eventErrors.time}</small>}</label>
           <label className={eventErrors.amount ? "invalid" : ""}>Dose ({event.unit}) <input aria-label={`Dose ${index + 1} amount in ${event.unit}`} aria-invalid={Boolean(eventErrors.amount)} type="number" min="0" step="any" value={event.amount} onChange={(e) => change(event.id, "amount", e.target.value)} />{eventErrors.amount && <small className="field-error">{eventErrors.amount}</small>}</label>
           <span className="unit">{ratio ?? event.unit}</span>
+          <label className={eventErrors.duration ? "invalid" : ""}>Δt ({study.timeUnit}) <input aria-label={`Dose ${index + 1} infusion duration in ${study.timeUnit}`} aria-invalid={Boolean(eventErrors.duration)} type="number" min="0" max={Math.max(0, horizon - Number(event.time))} step="any" value={event.duration ?? 0} onChange={(e) => change(event.id, "duration", e.target.value)} />{eventErrors.duration && <small className="field-error">{eventErrors.duration}</small>}</label>
           <button type="button" className="icon-button" aria-label={`Remove dose ${index + 1}`} disabled={index === 0} onClick={() => remove(event.id)}>×</button>
         </div>;
       })}
@@ -587,7 +602,7 @@ export function Dashboard() {
   const [uploadOpen, setUploadOpen] = useState(initialMode === "upload");
   const [syntheticMode, setSyntheticMode] = useState(initialMode === "synthetic");
   const [syntheticStudy, setSyntheticStudy] = useState<Study | null>(null);
-  const [syntheticSelection, setSyntheticSelection] = useState<SyntheticCohortSelection>("v7");
+  const [syntheticSelection, setSyntheticSelection] = useState<SyntheticCohortSelection>("v1");
   const [syntheticStale, setSyntheticStale] = useState(false);
   const [selectedId, setSelectedId] = useState("lenuzza-caffeine");
   const [vpcLogY, setVpcLogY] = useState(false);
@@ -596,7 +611,7 @@ export function Dashboard() {
   const [modelResult, setModelResult] = useState<InferenceResponse | null>(null);
   const [assayLimit, setAssayLimit] = useState<number | null>(null);
   const [sensitivity, setSensitivity] = useState(67);
-  const [showLatent, setShowLatent] = useState(false);
+  const [showLatent, setShowLatent] = useState(true);
   useEffect(() => {
     const abort = new AbortController();
     const timeout = setTimeout(() => abort.abort(), 20000);
@@ -694,7 +709,7 @@ export function Dashboard() {
           <section className={syntheticMode && syntheticStale ? "results-grid stale-results" : "results-grid"} data-stale={syntheticMode && syntheticStale ? "true" : undefined}>
             <article className="card chart-card">
               <div className="card-heading"><h2>Individuals <span className="individual-count">N={activeStudy.subjects.length}</span></h2><div className="chart-actions"><span className="legend">{modelResult && <><span className="legend-item"><i className="red-line" />{modelLabel}</span></>}<span className="legend-item"><i className="blue-line" />Study</span></span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
-              {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} showLatent={showLatent && builtInSynthetic} />}
+              {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical showLatent={syntheticMode && showLatent && builtInSynthetic} /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} showLatent={showLatent && builtInSynthetic} />}
               {modelResult && <p className="assay-caption">Generated individuals use the context patients’ observation schedules, repeated across the generated cohort.</p>}
               <IndividualsCaption study={activeStudy} result={modelResult} />
             </article>

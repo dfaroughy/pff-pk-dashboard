@@ -4,7 +4,7 @@ export type SyntheticVersion = "v1" | "v6" | "v7";
 export const SYNTHETIC_INITIAL_SEED = 9877795;
 export const SYNTHETIC_LIMITS = {
   individuals: { min: 2, max: 100, default: 16 },
-  observations: { min: 2, max: 20, default: 8 },
+  observations: { min: 2, max: 20, default: 20 },
 };
 export type DoseEvent = {
   time: number;

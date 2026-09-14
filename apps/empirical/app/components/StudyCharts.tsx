@@ -48,7 +48,7 @@ function ticks(min: number, max: number, count = 5) {
   return Array.from({ length: count }, (_, index) => min + (max - min) * index / (count - 1));
 }
 
-type LineStyle = { stroke: string; width?: number; opacity?: number; markers?: boolean; radius?: number; dash?: string };
+type LineStyle = { stroke: string; width?: number; opacity?: number; markers?: boolean; radius?: number; dash?: string; dashBelowLloq?: boolean };
 
 export function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands = [], errorBars = [], assay, flagged = [], fraction = false }: {
   series: Point[][]; styles: LineStyle[]; logY: boolean; xLabel: string; yLabel: string; ariaLabel: string;
@@ -103,7 +103,13 @@ export function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands =
     return segments.join(" ");
   };
   return <svg ref={svgRef} className={fraction ? "chart blq-chart" : "chart"} style={fraction ? { aspectRatio: `${width} / ${height}` } : undefined} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
-    <defs><clipPath id={clipId}><rect x={left} y={marginTop} width={width - left - MARGIN.right} height={height - marginTop - MARGIN.bottom} /></clipPath></defs>
+    <defs>
+      <clipPath id={clipId}><rect x={left} y={marginTop} width={width - left - MARGIN.right} height={height - marginTop - MARGIN.bottom} /></clipPath>
+      {assay && Number.isFinite(assay.lloq) && assay.lloq > 0 && <>
+        <clipPath id={`${clipId}-above-lloq`}><rect x={left} y={marginTop} width={width - left - MARGIN.right} height={Math.max(0, y(assay.lloq) - marginTop)} /></clipPath>
+        <clipPath id={`${clipId}-below-lloq`}><rect x={left} y={y(assay.lloq)} width={width - left - MARGIN.right} height={Math.max(0, height - MARGIN.bottom - y(assay.lloq))} /></clipPath>
+      </>}
+    </defs>
     {ticks(domain.xMin, domain.xMax, Math.min(5, Math.max(2, Math.floor((width - left - MARGIN.right) / 100) + 1))).map((tick) => <g key={`x-${tick}`}>
       <line className="gridline" x1={x(tick)} x2={x(tick)} y1={marginTop} y2={height - MARGIN.bottom} />
       <text className="tick" x={x(tick)} y={height - 42} textAnchor="middle">{tick.toPrecision(3).replace(/\.00$/, "")}</text>
@@ -129,9 +135,13 @@ export function Chart({ series, styles, logY, xLabel, yLabel, ariaLabel, bands =
       {assay && <line x1={left} x2={width - MARGIN.right} y1={y(assay.lloq)} y2={y(assay.lloq)} stroke="var(--assay-amber)" strokeWidth="1.2" strokeDasharray="6 4" />}
       {series.map((points, index) => {
         const style = styles[index] ?? styles[0];
+        const split = style.dashBelowLloq && assay && Number.isFinite(assay.lloq) && assay.lloq > 0;
         return <g key={`line-${index}`} opacity={style.opacity ?? 1}>
-          <path d={path(points)} fill="none" stroke={style.stroke} strokeWidth={style.width ?? 1} strokeDasharray={style.dash} />
-          {style.markers && points.filter(valid).map(([time, value], pointIndex) => <circle key={pointIndex} cx={x(time)} cy={y(value)} r={style.radius ?? 2} fill={style.stroke} />)}
+          {/* Clip the displayed polyline at the threshold, including crossings
+              between samples, on both linear and logarithmic axes. */}
+          <path d={path(points)} fill="none" stroke={style.stroke} strokeWidth={style.width ?? 1} strokeDasharray={style.dash} clipPath={split ? `url(#${clipId}-above-lloq)` : undefined} />
+          {split && <path d={path(points)} fill="none" stroke={style.stroke} strokeWidth={style.width ?? 1} strokeDasharray="4 3" clipPath={`url(#${clipId}-below-lloq)`} />}
+          {style.markers && points.filter(point => valid(point) && (!split || point[1] >= assay!.lloq)).map(([time, value], pointIndex) => <circle key={pointIndex} cx={x(time)} cy={y(value)} r={style.radius ?? 2} fill={style.stroke} />)}
         </g>;
       })}
     </g>
@@ -197,16 +207,18 @@ export function VpcChart({ study, logY, numBins, onBins }: { study: Study; logY:
   ]} logY={logY} xLabel={`Time (${study.timeUnit})`} yLabel={concentrationLabel(study.concentrationUnit)} ariaLabel={`Observed visual predictive check for ${study.drug}`} /><BlqChart points={vpc} timeUnit={study.timeUnit} /></>;
 }
 
-export function ModelTrajectoryChart({ result, study, logY, showEmpirical }: { result: InferenceResponse; study: Study; logY: boolean; showEmpirical: boolean }) {
+export function ModelTrajectoryChart({ result, study, logY, showEmpirical, showLatent = false }: { result: InferenceResponse; study: Study; logY: boolean; showEmpirical: boolean; showLatent?: boolean }) {
   const empirical = showEmpirical ? study.subjects.map((subject) => subject.points) : [];
+  const latent = showEmpirical && showLatent ? study.subjects.flatMap(s => s.latentPoints ? [s.latentPoints] : []) : [];
   const generated = generatedObservationCurves(result, study);
   return <Chart
     assay={study.assay}
     flagged={showEmpirical ? censoringMarkers(study) : []}
-    series={[...empirical, ...generated]}
+    series={[...latent, ...empirical, ...generated]}
     styles={[
+      ...latent.map(() => ({ stroke: "var(--trajectory-blue)", opacity: 0.35, dash: "4 3" })),
       ...empirical.map(() => ({ stroke: "var(--trajectory-blue)", width: 1, opacity: 0.38, markers: true, radius: 1.4 })),
-      ...generated.map(() => ({ stroke: "var(--generated)", width: 1, opacity: 0.48, markers: true, radius: 1.25 })),
+      ...generated.map(() => ({ stroke: "var(--generated)", width: 1, opacity: 0.48, markers: true, radius: 1.25, dashBelowLloq: result.request.modelId === "pythia_covariates" })),
     ]}
     logY={logY}
     xLabel={`Time (${result.units.time})`}

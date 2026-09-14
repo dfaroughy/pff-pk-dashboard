@@ -76,6 +76,33 @@ const response: InferenceResponse = {
   provenance: { checkpointSha256: "abc", normalization: "test", sourceProcess: {}, device: "cpu", runtimeSeconds: 0.1 },
 };
 
+test("known LLOQ is provided automatically without changing study observations", async () => {
+  mocks.runInference.mockResolvedValue(response);
+  const assay = { lloq: 0.1, source: "test assay" };
+  render(<ModelPanel study={{ ...study, assay }} onResult={vi.fn()} />);
+  await waitFor(() => expect(screen.getByRole("option", { name: "Pythia-Covariates" })).toBeTruthy());
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), "pythia_covariates");
+  expect(screen.queryByRole("combobox", { name: "Provide LLOQ to model" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Run model" }));
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  const request = mocks.runInference.mock.calls[0][0];
+  expect(request.provideLloq).toBe(true);
+  expect(request.study.assay).toEqual(assay);
+  expect(request.study.subjects).toEqual(study.subjects);
+});
+
+test("absent LLOQ is automatically marked unavailable", async () => {
+  mocks.runInference.mockResolvedValue(response);
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
+  await waitFor(() => expect(screen.getByRole("option", { name: "Pythia-Covariates" })).toBeTruthy());
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), "pythia_covariates");
+  expect(screen.queryByRole("combobox", { name: "Provide LLOQ to model" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Run model" }));
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0].provideLloq).toBe(false);
+  expect(mocks.runInference.mock.calls[0][0].study.assay).toBeUndefined();
+});
+
 test.each(["pythia", "pythia_dose"])("censored synthetic cohorts can reach %s without a blocking notice", async (modelId) => {
   mocks.runInference.mockResolvedValue(response);
   render(<ModelPanel study={{ ...study, censoringApplied: true }} onResult={vi.fn()} />);
@@ -265,6 +292,11 @@ test("uses model-specific generation limits", async () => {
   await user.type(draws, "100");
   expect(draws.max).toBe("100");
 
+  await waitFor(() => expect(screen.getByRole("option", { name: "Pythia-Covariates" })).toBeTruthy());
+  await user.selectOptions(screen.getByLabelText("Models"), "pythia_covariates");
+  expect(draws.max).toBe("100");
+  expect(draws.valueAsNumber).toBe(100);
+
   await user.selectOptions(screen.getByLabelText("Models"), "pythia_dose");
   expect(draws.max).toBe("30");
   expect(draws.valueAsNumber).toBe(30);
@@ -390,6 +422,64 @@ test("intervention dose and time accept full decimal replacement and reach infer
   expect(mocks.runInference.mock.calls[0][0].modelId).toBe("pythia_dose");
   expect(mocks.runInference.mock.calls[0][0].solver).toEqual({ method: "heun", steps: 8 });
   await waitFor(() => expect(onResult).toHaveBeenCalledWith(response));
+});
+
+test.each(["pythia_dose", "pythia_covariates"])("%s edits and resets infusion duration", async (model) => {
+  const user = userEvent.setup();
+  mocks.runInference.mockResolvedValue(response);
+  render(<ModelPanel study={{ ...study, route: "iv", doseEvents: [
+    { time: 0, amount: 10, unit: "mg", route: "iv", duration: 2 },
+  ] }} onResult={vi.fn()} />);
+  await screen.findByRole("option", { name: "Pythia-Covariates" });
+  await user.selectOptions(screen.getByLabelText("Models"), model);
+  const duration = screen.getByLabelText("Dose 1 infusion duration in h") as HTMLInputElement;
+  expect(duration.value).toBe("2");
+  const run = screen.getByRole("button", { name: "Run model" }) as HTMLButtonElement;
+  await user.clear(duration);
+  expect(run.disabled).toBe(true);
+  await user.type(duration, "25");
+  expect(run.disabled).toBe(true);
+  await user.clear(duration);
+  await user.type(duration, "1.5");
+  await waitFor(() => expect(run.disabled).toBe(false));
+  await user.click(run);
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0].doseEvents[0].duration).toBe(1.5);
+  expect(mocks.runInference.mock.calls[0][0].study.doseEvents[0].duration).toBe(2);
+  await user.click(screen.getByRole("button", { name: "Reset protocol" }));
+  expect(duration.value).toBe("2");
+});
+
+test.each(["pythia_dose", "pythia_covariates"])("%s defaults track the complete context protocol, including same-study updates", async (model) => {
+  const user = userEvent.setup();
+  mocks.runInference.mockResolvedValue(response);
+  const onResult = vi.fn();
+  const events = [
+    { time: 1, amount: 12, duration: 2, unit: "mg", route: "iv" },
+    { time: 8, amount: 6, duration: 0.5, unit: "mg", route: "iv" },
+  ];
+  const context = { ...study, route: "iv", doseEvents: events };
+  const view = render(<ModelPanel study={context} onResult={onResult} />);
+  await screen.findByRole("option", { name: "Pythia-Covariates" });
+  await user.selectOptions(screen.getByLabelText("Models"), model);
+  const value = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value;
+  expect(value("Dose 1 time in h")).toBe("1");
+  expect(value("Dose 1 amount in mg")).toBe("12");
+  expect(value("Dose 1 infusion duration in h")).toBe("2");
+  expect(value("Dose 2 time in h")).toBe("8");
+  expect(value("Dose 2 amount in mg")).toBe("6");
+  expect(value("Dose 2 infusion duration in h")).toBe("0.5");
+  await user.click(screen.getByRole("button", { name: "Run model" }));
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0].doseEvents).toEqual(events);
+  const updated = [{ ...events[0], time: 3, amount: 15, duration: 1 }];
+  view.rerender(<ModelPanel study={{ ...context, doseEvents: updated }} onResult={onResult} />);
+  await waitFor(() => expect(value("Dose 1 time in h")).toBe("3"));
+  expect(value("Dose 1 amount in mg")).toBe("15");
+  expect(value("Dose 1 infusion duration in h")).toBe("1");
+  expect(screen.queryByLabelText("Dose 2 time in h")).toBeNull();
+  expect((screen.getByLabelText("Models") as HTMLSelectElement).value).toBe(model);
+  expect(onResult).toHaveBeenLastCalledWith(null);
 });
 
 test("invalid transient values disable inference instead of becoming zero", async () => {
