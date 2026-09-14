@@ -12,7 +12,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--space", default="Dariusfar/pff-pk-api")
     args = parser.parse_args()
-    client = Client(args.space)
+    # Synthetic schema descriptions contain ordinary "path" fields, not files.
+    client = Client(args.space, download_files=False)
     health = client.predict(api_name="/health")
     for model in ("pythia", "pythia_dose", "pythia_covariates"):
         assert health["models"][model]["ready"], health

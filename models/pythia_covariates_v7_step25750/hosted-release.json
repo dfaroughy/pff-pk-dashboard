@@ -1,0 +1,14 @@
+{
+  "modelId": "pythia_covariates",
+  "globalStep": 25750,
+  "modelRepository": "Dariusfar/pff-pk-v6",
+  "modelRepositoryPrivate": true,
+  "modelRevision": "d2ef3b8160d717ac06ddc131e9ee102de558fdd8",
+  "modelPath": "models/pythia-covariates",
+  "checkpointSha256": "29ef09a383b688a96fe05047cd27bebf472e22ecb6a744ec0a8dc4435a148d07",
+  "spaceRepository": "Dariusfar/pff-pk-api",
+  "spaceRevision": "2e428121eff5e6744e2b3b772535b16e8149b3fb",
+  "previousModelRevision": "4dee404570f1e7fe28caccea9d9bfe56735cb867",
+  "previousSpaceRevision": "ed2a90c4c0024efb2d14c728756ffd47e3459d38",
+  "releasedDate": "2026-09-14"
+}

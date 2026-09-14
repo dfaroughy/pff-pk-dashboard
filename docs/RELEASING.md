@@ -57,3 +57,22 @@ uv pip compile services/huggingface_space/requirements.in \
 Review and test lock changes before uploading. The torch wheel is CPU-only.
 Frontend publishing and Space uploading remain separate explicit actions.
 The cleanup itself does not publish either one.
+
+## Adding a public model backed by private weights
+
+Use `prepare_model_release.py` to strip training state, preserving all checkpoint
+contracts (including covariates, censoring and embedding architecture). Strict-load
+the resulting checkpoint and exercise inference against the exact bundled sources
+before uploading. Add the release under its own `models/<name>/` directory in the
+existing private model repository; do not replace the legacy model directories.
+
+Record the immutable model commit and verify it contains all models before changing
+the Space's `MODEL_REVISION`. Then publish the source-only bundle and wait for the
+Space to reach RUNNING. Keep the old model and Space commits available for rollback.
+The Space hardware and existing access token do not need to change.
+
+Run `python services/huggingface_space/smoke_live.py` in an environment with
+`gradio_client`. This checks hosted health, synthetic generation, all three models,
+and covariate inference with explicit censored records, distinct target covariates,
+and both known/hidden LLOQ. It sends synthetic data only. A successful health response
+alone is not sufficient: models are loaded lazily, so actual inference must pass.
