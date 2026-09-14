@@ -40,6 +40,7 @@ from pff_pk.inference.empirical import (  # noqa: E402
 from pff_pk.inference.model import load_inference_model  # noqa: E402
 
 from services.inference.censored_vpc import DASHBOARD_VPC_VERSION, dashboard_vpc_summary  # noqa: E402
+from services.inference.covariate_batch import covariate_cohort_batch, mask_lloq_input, target_covariate_rows  # noqa: E402
 
 DEFAULT_CONFIG = PFF_ROOT / "configs" / "amarel_v6_protocol_counterfactual_phase2_sparse.yaml"
 DEFAULT_CHECKPOINT = (
@@ -70,6 +71,8 @@ VPC_REPLICATES = 200
 VPC_SEED_OFFSET = 104729
 PYTHIA_MODEL = "pythia"
 PYTHIA_DOSE_MODEL = "pythia_dose"
+PYTHIA_COVARIATES_MODEL = "pythia_covariates"
+DEFAULT_COVARIATES_DIRECTORY = PFF_ROOT / "artifacts/checkpoints/pythia_covariates_v7_step25750"
 DEFAULT_MODEL = PYTHIA_DOSE_MODEL
 
 
@@ -113,8 +116,8 @@ def bounded_integer(value: Any, field: str, low: int, high: int) -> int:
 def requested_model(request: dict[str, Any]) -> str:
     """Resolve a public model identifier with a dose-capable default."""
     model_id = str(request.get("modelId", DEFAULT_MODEL)).strip().lower()
-    if model_id not in {PYTHIA_MODEL, PYTHIA_DOSE_MODEL}:
-        raise ValueError("modelId must be pythia or pythia_dose")
+    if model_id not in {PYTHIA_MODEL, PYTHIA_DOSE_MODEL, PYTHIA_COVARIATES_MODEL}:
+        raise ValueError("modelId must be pythia, pythia_dose, or pythia_covariates")
     return model_id
 
 
@@ -160,6 +163,9 @@ def build_cohort(study: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"invalid point for subject {identifier!r}")
             observation_time = finite(point[0], f"subject time {index}")
             concentration = finite(point[1], f"subject concentration {index}")
+            # A stored zero with a known assay is an interval observation, not
+            # a missing sample. Keep its schedule/rank; the inference adapter
+            # requires positive concentrations and receives the assay floor.
             assay = study.get("assay") or {}
             if concentration == 0 and assay.get("lloq") is not None:
                 limit = finite(assay["lloq"], "assay LLOQ")
@@ -356,7 +362,7 @@ class ModelRuntime:
             "nDraws",
             1,
             MAX_GENERATED_INDIVIDUALS
-            if self.model_id == PYTHIA_MODEL
+            if self.model_id in {PYTHIA_MODEL, PYTHIA_COVARIATES_MODEL}
             else MAX_DOSE_GENERATED_INDIVIDUALS,
         )
         solver = request.get("solver") or {}
@@ -376,31 +382,50 @@ class ModelRuntime:
             else generation_only_protocol(request.get("doseEvents"), cohort)
         )
 
-        cpu_batch, _, _ = empirical_cohort_batch(
-            cohort,
-            normalization=loaded.normalization,
-            # The original Pythia checkpoint predates the dose-event operator.
-            # Its reference protocol is validated above but must not be encoded
-            # as a model input.
-            target_dose_events=target_events if self.supports_dose else None,
-        )
+        omitted = 0
+        target_rows = None
+        if self.model_id == PYTHIA_COVARIATES_MODEL:
+            cpu_batch, _, omitted = covariate_cohort_batch(
+                request.get("study") or {}, cohort,
+                normalization=loaded.normalization, target_dose_events=target_events,
+            )
+            cpu_batch = mask_lloq_input(cpu_batch, request.get("provideLloq", True))
+            target_rows, target_values, target_masks = target_covariate_rows(
+                request.get("targetCovariates"), n_draws, cpu_batch,
+            )
+        else:
+            if request.get("targetCovariates") is not None:
+                raise ValueError("targetCovariates requires Pythia-Covariates")
+            cpu_batch, _, _ = empirical_cohort_batch(
+                cohort, normalization=loaded.normalization,
+                target_dose_events=target_events if self.supports_dose else None,
+            )
         if self.supports_dose:
             cpu_batch = with_context_protocols(cpu_batch, request.get("study") or {}, cohort)
-        cpu_batch = union_query_batch(cpu_batch)
+        if self.model_id != PYTHIA_COVARIATES_MODEL:
+            cpu_batch = union_query_batch(cpu_batch)
         query_time = cpu_batch.target_time.numpy()[0, :, 0] * cohort["horizon"]
-        seed = bounded_integer(request.get("seed", 43), "seed", 0, 2**31 - 1)
+        seed = bounded_integer(request.get("seed", 9877795), "seed", 0, 2**31 - 1)
         started = time.perf_counter()
         chunks = []
         for start in range(0, n_draws, batch_size):
             count = min(batch_size, n_draws - start)
-            repeated = batch_to_device(repeat_batch(cpu_batch, count), self.device)
+            repeated = repeat_batch(cpu_batch, count)
+            shared = True
+            if target_rows is not None:
+                values = target_values[start:start + count]
+                masks = target_masks[start:start + count]
+                repeated = replace(repeated, target_covariates=target_rows[start:start + count],
+                                   target_covariate_values=values, target_covariate_mask=masks)
+                shared = torch.equal(values, values[:1].expand_as(values)) and torch.equal(masks, masks[:1].expand_as(masks))
+            repeated = batch_to_device(repeated, self.device)
             torch.manual_seed(seed + start)
             with torch.inference_mode():
                 normalized = loaded.model.sample(
                     repeated,
                     steps=steps,
                     integration_method=method,
-                    shared_inference=True,
+                    shared_inference=shared,
                 )
                 physical = inverse_concentration(normalized, repeated).float().cpu().numpy()
             chunks.append(physical[..., 0])
@@ -425,6 +450,9 @@ class ModelRuntime:
                 "nDraws": n_draws,
                 "solver": {"method": method, "steps": steps},
                 "seed": seed,
+                **({"targetCovariates": target_rows} if target_rows is not None else {}),
+                **({"provideLloq": request.get("provideLloq", True)}
+                   if self.model_id == PYTHIA_COVARIATES_MODEL else {}),
             },
             "queryTime": query_time.tolist(),
             "generatedConcentration": samples.tolist(),
@@ -436,6 +464,7 @@ class ModelRuntime:
                 "sourceProcess": loaded.source_process,
                 "device": "cpu",
                 "runtimeSeconds": elapsed,
+                "unresolvedObservationsOmittedFromConditioning": omitted,
             },
         }
 
@@ -448,6 +477,13 @@ def configured_path(primary: str, legacy: str | None, default: Path) -> Path:
 
 
 RUNTIMES = {
+    PYTHIA_COVARIATES_MODEL: ModelRuntime(
+        model_id=PYTHIA_COVARIATES_MODEL,
+        label="Pythia-Covariates",
+        supports_dose=True,
+        config_path=configured_path("PFF_COVARIATES_CONFIG", None, REPOSITORY_ROOT / "models/pythia_covariates_v7_step25750/inference.yaml"),
+        checkpoint_path=configured_path("PFF_COVARIATES_CHECKPOINT", None, DEFAULT_COVARIATES_DIRECTORY / "rolling-step=25750.ckpt"),
+    ),
     PYTHIA_MODEL: ModelRuntime(
         model_id=PYTHIA_MODEL,
         label="Pythia",

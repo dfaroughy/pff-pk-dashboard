@@ -287,7 +287,7 @@ def _replay_edits(record, profile, payload):
 def generate(payload):
     if not isinstance(payload, dict):
         raise ValueError("synthetic request must be an object")
-    version = payload.get("version", "v6")
+    version = payload.get("version", "v7")
     if version not in VERSIONS:
         raise ValueError("choose v1, v6 or v7")
     if payload.get("action") == "describe":
@@ -308,10 +308,10 @@ def generate(payload):
     }
     if unknown:
         raise ValueError(f"unsupported synthetic controls: {sorted(unknown)}")
-    seed = _integer(payload.get("seed", 46), "seed", 0, 2**31 - 1)
+    seed = _integer(payload.get("seed", 9877795), "seed", 0, 2**31 - 1)
     mlp_seed = None if payload.get("mlpSeed") is None else _integer(payload["mlpSeed"], "mlpSeed", 0, 2**31 - 1)
     count = _integer(payload.get("individuals", 16), "individuals", 2, 100)
-    observations = _integer(payload.get("observations", 8), "observations", 2, 20)
+    observations = _integer(payload.get("observations", 20), "observations", 2, 20)
     grid_seed = _integer(payload.get("gridSeed", 0), "gridSeed", 0, 2**31 - 1)
     schedule, shape = payload.get("schedule", "unscheduled"), payload.get("shape", "early")
     if schedule not in ("exact", "pseudo_scheduled", "unscheduled") or shape not in (
@@ -346,7 +346,8 @@ def generate(payload):
             {
                 "id": person["id"],
                 "points": [[times[i], concentrations[i]] for i in indices],
-                "covariates": person.get("covariates", {}),
+                "covariates": ({**record["truth"]["individuals"][person["id"]].get("hidden_covariates", {}),
+                                **person.get("covariates", {})} if version == "v7" else person.get("covariates", {})),
                 "doseEvents": person.get("dose_events", record["protocol"]["dose_events"]),
             }
         )
@@ -365,6 +366,7 @@ def generate(payload):
         "shape": shape,
         "gridSeed": grid_seed,
         "basePoints": BASE_POINTS,
+        "dashboardCovariates": "truth" if version == "v7" else "observed",
     }
     study = {
         "id": f"synthetic-{version}-{digest([provenance, subjects])[:20]}",

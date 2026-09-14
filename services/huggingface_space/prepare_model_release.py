@@ -20,6 +20,9 @@ INFERENCE_KEYS = {
     "pff_pk_operator_measure",
     "pff_pk_source_process",
     "pff_pk_protocol_encoding",
+    "pff_pk_covariate_encoding",
+    "pff_pk_censoring_encoding",
+    "pff_pk_embedding_architecture",
 }
 
 
@@ -59,6 +62,9 @@ def main() -> None:
         "normalization": source.get("pff_pk_concentration_normalization"),
         "operator_measure": source.get("pff_pk_operator_measure"),
         "source_process": source.get("pff_pk_source_process"),
+        "covariate_encoding": source.get("pff_pk_covariate_encoding", "none"),
+        "censoring_encoding": source.get("pff_pk_censoring_encoding", "none"),
+        "embedding_architecture": source.get("pff_pk_embedding_architecture"),
         "protocol_encoding": source.get(
             "pff_pk_protocol_encoding", "normalized_cumulative_v1"
         ),

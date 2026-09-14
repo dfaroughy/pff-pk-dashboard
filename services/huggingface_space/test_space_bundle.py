@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from services.huggingface_space.build_bundle import MANIFEST, build_bundle
+from services.huggingface_space.prepare_model_release import INFERENCE_KEYS
 
 
 class SpaceSourceTests(unittest.TestCase):
@@ -47,6 +48,26 @@ class SpaceSourceTests(unittest.TestCase):
             )
         )
         self.assertEqual(ast.literal_eval(assignment.value), {"method": "heun", "steps": 8})
+
+    def test_covariate_release_preserves_strict_loading_contracts(self) -> None:
+        self.assertTrue({"pff_pk_covariate_encoding", "pff_pk_censoring_encoding",
+                         "pff_pk_embedding_architecture"} <= INFERENCE_KEYS)
+        self.assertNotIn("optimizer_states", INFERENCE_KEYS)
+
+    def test_all_public_models_download_pinned_private_weights(self) -> None:
+        tree = ast.parse((self.root / "app.py").read_text(encoding="utf-8"))
+        downloads = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                     and isinstance(node.func, ast.Name) and node.func.id == "hf_hub_download"]
+        files = set()
+        for call in downloads:
+            kwargs = {item.arg: item.value for item in call.keywords}
+            self.assertEqual(kwargs["repo_id"].id, "MODEL_REPO_ID")
+            self.assertEqual(kwargs["revision"].id, "MODEL_REVISION")
+            self.assertEqual(kwargs["token"].id, "token")
+            files.add(ast.literal_eval(kwargs["filename"]))
+        self.assertEqual(files, {f"models/{model}/{filename}"
+                                for model in ("pythia", "pythia-dose", "pythia-covariates")
+                                for filename in ("model.ckpt", "config.yaml")})
 
 
 class BundleSafetyTests(unittest.TestCase):

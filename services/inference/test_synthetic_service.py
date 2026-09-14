@@ -12,6 +12,16 @@ from synthetic_priors.simulation.views import observation_view
 
 
 class CanonicalSyntheticTests(unittest.TestCase):
+    def test_v7_dashboard_exposes_true_covariates_without_changing_simulation(self):
+        expected = generate_profile_study("v7", 30, n_individuals=3, observation_points=128)
+        actual = generate({"version": "v7", "seed": 30, "individuals": 3})
+        self.assertEqual(actual["provenance"]["recordSha256"], digest(expected))
+        self.assertEqual(actual["provenance"]["dashboardCovariates"], "truth")
+        for subject, original in zip(actual["study"]["subjects"], expected["individuals"], strict=True):
+            truth = expected["truth"]["individuals"][original["id"]]
+            self.assertEqual(subject["covariates"], {**truth["hidden_covariates"], **original["covariates"]})
+            self.assertTrue(all(key in subject["covariates"] for key in ("age_years", "weight_kg", "sex")))
+
     def test_profiles_equal_production(self):
         for version in ("v1", "v6", "v7"):
             actual = generate({"version": version, "seed": 30, "individuals": 3})

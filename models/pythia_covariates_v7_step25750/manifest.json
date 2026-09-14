@@ -1,0 +1,15 @@
+{
+  "modelId": "pythia_covariates",
+  "label": "Pythia-Covariates",
+  "scope": "local-only",
+  "globalStep": 25750,
+  "trainingBudget": 120000,
+  "continuationJobId": "61526230",
+  "remoteSnapshot": "/scratch/df630/pfff/dashboard_exports/lloq_audit_20260914/rolling-step=25750.ckpt",
+  "localCheckpointRelativeToPffPk": "artifacts/checkpoints/pythia_covariates_v7_step25750/rolling-step=25750.ckpt",
+  "checkpointBytes": 406795133,
+  "checkpointSha256": "f739c9ee38cef0790bd2c335ba8b244ea1efbc7381c408485f26092373b9cfe5",
+  "configuration": "inference.yaml",
+  "downloadedDate": "2026-09-14",
+  "verified": {"sha256": true, "strictCheckpointLoad": true, "knownLloqAndCens": true, "maskedLloqAndCens": true}
+}

@@ -18,14 +18,18 @@ weights are loaded from a private, immutable Hugging Face model release and are
 never included in this Space repository or returned by its API.
 
 The release stores the generation-only `digital_square_8491` model under
-`models/pythia/` and the dose-aware v6 model under `models/pythia-dose/`.
+`models/pythia/`, the dose-aware v6 model under `models/pythia-dose/`, and
+Pythia-Covariates (v7, training step 25,750) under `models/pythia-covariates/`.
 Their checkpoints, configurations and capability manifests remain separate.
+Pythia-Covariates supports covariate conditioning, dose interventions and explicit
+left-censoring metadata. It is an intermediate training checkpoint, not a completed
+120,000-step training run. The dashboard supplies LLOQ when the cohort has one.
 
-The service runs on CPU Basic hardware. It does not use ZeroGPU and therefore
+The service runs on CPU hardware. It does not use ZeroGPU and therefore
 does not consume visitors' daily GPU quota.
 
 Public requests generate 20 individuals by default. Generation-only Pythia
-requests are capped at 100 individuals; Pythia-Dose requests retain the
+and Pythia-Covariates requests are capped at 100 individuals; Pythia-Dose requests retain the
 30-individual cap. The demo fixes flow integration to eight Heun steps; solver
 controls are not exposed. These limits are enforced by both the dashboard and
 the inference service. Each VPC uses that same generated pool and

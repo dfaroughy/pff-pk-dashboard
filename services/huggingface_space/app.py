@@ -39,12 +39,26 @@ pythia_config = hf_hub_download(
     revision=MODEL_REVISION,
     token=token,
 )
+covariates_checkpoint = hf_hub_download(
+    repo_id=MODEL_REPO_ID,
+    filename="models/pythia-covariates/model.ckpt",
+    revision=MODEL_REVISION,
+    token=token,
+)
+covariates_config = hf_hub_download(
+    repo_id=MODEL_REPO_ID,
+    filename="models/pythia-covariates/config.yaml",
+    revision=MODEL_REVISION,
+    token=token,
+)
 
 os.environ["PFF_REPO"] = str(ROOT)
 os.environ["PFF_DOSE_CHECKPOINT"] = checkpoint
 os.environ["PFF_DOSE_CONFIG"] = config
 os.environ["PFF_PYTHIA_CHECKPOINT"] = pythia_checkpoint
 os.environ["PFF_PYTHIA_CONFIG"] = pythia_config
+os.environ["PFF_COVARIATES_CHECKPOINT"] = covariates_checkpoint
+os.environ["PFF_COVARIATES_CONFIG"] = covariates_config
 os.environ.setdefault("PFF_CACHE_ROOT", "/tmp/pff-inference-cache")
 os.environ.setdefault("PFF_CPU_THREADS", "2")
 
