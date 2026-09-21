@@ -306,7 +306,7 @@ export function SyntheticStudyBuilder({
             label="Cohort individuals"
             integer
             min={2}
-            max={100}
+            max={SYNTHETIC_LIMITS.individuals.max}
             disabled={!description}
             value={individuals}
             onCommit={(next) => {
@@ -321,8 +321,8 @@ export function SyntheticStudyBuilder({
             id="synthetic-observations"
             label="Observations per individual"
             integer
-            min={2}
-            max={20}
+            min={SYNTHETIC_LIMITS.observations.min}
+            max={SYNTHETIC_LIMITS.observations.max}
             disabled={!description}
             value={observations}
             onCommit={(next) => {

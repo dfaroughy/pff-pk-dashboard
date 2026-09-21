@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { applySyntheticCensoring, drawCensoring, withAssayMetadata } from "../app/lib/censoring";
+import { applyEmpiricalCensoring, applySyntheticCensoring, drawCensoring, withAssayMetadata } from "../app/lib/censoring";
 import { TrajectoryChart, VpcChart } from "../app/components/StudyCharts";
 import type { Study } from "../app/lib/types";
 
@@ -28,6 +28,18 @@ test("Lenuzza-specific digoxin limit preserves raw data and uncertainty", () => 
   expect(study.assay).toBeUndefined();
   expect(withAssayMetadata({ ...study, concentrationUnit: "g/L" }).assay).toBeUndefined();
   expect(withAssayMetadata({ ...study, id: "other-digoxin" }).assay).toBeUndefined();
+});
+
+test("empirical floor edits preserve source data and cannot undo native censoring", () => {
+  const source = withAssayMetadata(study);
+  const raised = applyEmpiricalCensoring(source, 0.1);
+  expect(raised.subjects[0].points).toEqual([[0, 0.1], [0.5, 1], [1, 0.1]]);
+  expect(raised.subjects[0].cens).toEqual([1, 0, 1]);
+  expect(source.subjects[0].points).toEqual(study.subjects[0].points);
+  expect(raised.assay?.synthetic).toBeUndefined();
+  expect(applyEmpiricalCensoring(source, 0.05)).toBe(source);
+  expect(() => applyEmpiricalCensoring(source, 0.01)).toThrow();
+  expect(applyEmpiricalCensoring(study, 0)).toBe(study);
 });
 
 test("synthetic censoring retains latent values, times, and a dose-independent limit", () => {

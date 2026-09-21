@@ -35,6 +35,32 @@ The frontend check covers TypeScript, lint, unit tests, one production build,
 built catalogue checks and Pages routing. Service tests require the model
 package and its dependencies; they do not require a checkpoint or a GPU.
 
+## Local TabPFN research model
+
+The loopback service offers **TabPFN** when the sibling `tabpfn_pk/` environment
+and approved local weights are present. `TABPFN_PK_REPO` overrides that path;
+`PFF_LOCAL_TABPFN=0` disables registration. Nothing is installed into PFFF's
+environment. A subprocess consumes Study JSON and returns one complete curve
+per requested individual; the existing dashboard VPC/plot code is reused.
+All supplied subjects are context, with no hidden holdout or latent-curve access.
+
+The generation-only adapter now uses time-aware conditional sampling: the
+requested numerical time and each generated individual's previous numerical
+time/concentration pairs are regression inputs. The first point is sampled
+without an individual history; subsequent points use that new person's own
+draws. The union of observed post-zero times is the default output grid.
+Irregular observations and singleton times are retained without interpolation.
+Four frozen estimators run in the sibling environment with cached context
+attention and bounded prediction batches. The context-supported history depth
+and any rolling-window use are recorded in response provenance.
+Censored/unresolved values and dose interventions
+are rejected rather than silently approximated. Target covariates are not used.
+Outlier concentrations are preserved. Errors appear only after an invalid request;
+there are no extra dashboard banners. The backend rejects TabPFN calls from public
+web origins; hosted module imports do not register it, and the Space bundle does
+not include its bridge, dependencies or weights. Public serving requires separate
+license permission.
+
 ## Publishing
 
 `npm run build:pages` writes the static site to `dist/`. Users need only a browser.

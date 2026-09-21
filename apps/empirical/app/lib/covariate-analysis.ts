@@ -47,6 +47,7 @@ function moments(time: number, values: number[]): MomentPoint {
 // Exact observation times: no time binning, interpolation or extrapolation.
 // A censored value does not identify a mean/SD: leave a gap at that time.
 export function covariateMoments(study: Study, result: InferenceResponse | null, group: CovariateGroup) {
+  if (result?.observationPredictions) result = { ...result, ...result.observationPredictions };
   const times = new Map<number, { values: number[]; censored: boolean }>();
   group.observed.forEach(s => s.points.forEach(([t, c], i) => {
     if (!Number.isFinite(t)) return;
@@ -111,7 +112,7 @@ export function covariatePk(study: Study, result: InferenceResponse | null, colu
         const j = result.queryTime.reduce((best, v, k) => Math.abs(v - t) < Math.abs(result.queryTime[best] - t) ? k : best, 0);
         return Math.abs(result.queryTime[j] - t) < Math.max(1, Math.abs(t)) * 2e-6 ? [[t, full[j][1]] as Point] : [];
       });
-      add(`Generated ${i + 1}`, matched, covariateValue(result.request.targetCovariates?.[i], column), true, group.color);
+      add(`Generated ${i + 1}`, result.request.targetTimes ? full : matched, covariateValue(result.request.targetCovariates?.[i], column), true, group.color);
     });
   });
   return { rows, window: [low, high], excluded };

@@ -36,6 +36,7 @@ from synthetic_priors.schemas.replay import pack_arm, population_from_source  # 
 from synthetic_priors.schemas.system_reader import system_from_source  # noqa: E402
 from synthetic_priors.simulation.arms import simulate_arm  # noqa: E402
 from synthetic_priors.simulation.views import observation_view  # noqa: E402
+from services.inference.limits import individual_limit  # noqa: E402
 
 VERSIONS = ("v1", "v6", "v7")
 BASE_POINTS = 128
@@ -284,6 +285,27 @@ def _replay_edits(record, profile, payload):
     return True
 
 
+def dashboard_covariates(values, schema):
+    """Name anonymous inputs by recorded type, matching PFF's generic_rows.
+
+    This is a presentation alias only: keep simulator values and all additional
+    covariates intact. Never infer a legacy column's modality from its index.
+    """
+    result = dict(values)
+    for slot, kind, preferred in (
+        ("cov_cont_0", "continuous", "cov_0"),
+        ("cov_cat_0", "categorical", "cov_1"),
+    ):
+        names = sorted(item["name"] for item in schema
+                       if item.get("type") == kind
+                       and str(item.get("name", "")).startswith("cov_"))
+        source = preferred if preferred in names else names[0] if names else None
+        if source and source != slot and source in result:
+            value = result.pop(source)
+            result.setdefault(slot, value)
+    return result
+
+
 def generate(payload):
     if not isinstance(payload, dict):
         raise ValueError("synthetic request must be an object")
@@ -310,8 +332,8 @@ def generate(payload):
         raise ValueError(f"unsupported synthetic controls: {sorted(unknown)}")
     seed = _integer(payload.get("seed", 9877795), "seed", 0, 2**31 - 1)
     mlp_seed = None if payload.get("mlpSeed") is None else _integer(payload["mlpSeed"], "mlpSeed", 0, 2**31 - 1)
-    count = _integer(payload.get("individuals", 16), "individuals", 2, 100)
-    observations = _integer(payload.get("observations", 20), "observations", 2, 20)
+    count = _integer(payload.get("individuals", 16), "individuals", 2, individual_limit(100))
+    observations = _integer(payload.get("observations", 64), "observations", 2, 64)
     grid_seed = _integer(payload.get("gridSeed", 0), "gridSeed", 0, 2**31 - 1)
     schedule, shape = payload.get("schedule", "unscheduled"), payload.get("shape", "early")
     if schedule not in ("exact", "pseudo_scheduled", "unscheduled") or shape not in (
@@ -346,8 +368,11 @@ def generate(payload):
             {
                 "id": person["id"],
                 "points": [[times[i], concentrations[i]] for i in indices],
-                "covariates": ({**record["truth"]["individuals"][person["id"]].get("hidden_covariates", {}),
-                                **person.get("covariates", {})} if version == "v7" else person.get("covariates", {})),
+                "covariates": (dashboard_covariates(
+                    {**record["truth"]["individuals"][person["id"]].get("hidden_covariates", {}),
+                     **person.get("covariates", {})},
+                    record["truth"].get("covariate_model", {}).get("roster", []),
+                ) if version == "v7" else person.get("covariates", {})),
                 "doseEvents": person.get("dose_events", record["protocol"]["dose_events"]),
             }
         )

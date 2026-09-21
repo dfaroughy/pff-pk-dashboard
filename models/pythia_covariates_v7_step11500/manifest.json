@@ -1,0 +1,30 @@
+{
+  "modelId": "pythia_covariates",
+  "label": "Pythia-Covariates",
+  "scope": "local-only",
+  "globalStep": 11500,
+  "trainingBudget": 120000,
+  "jobId": "61430867",
+  "continuationJobId": "61526230",
+  "runId": "v7-production-2gpu-61430867__54f429115cdebfc1fceee08c09e5c122",
+  "remoteCheckpoint": "/scratch/df630/pfff/v7_training_20260911_24h_bP9iqO/production/v7-production-2gpu-61430867__54f429115cdebfc1fceee08c09e5c122/checkpoints/last.ckpt",
+  "remoteSnapshot": "/scratch/df630/pfff/dashboard_exports/local_dashboard_61526230/rolling-step=11500.ckpt",
+  "localCheckpointRelativeToPffPk": "artifacts/checkpoints/pythia_covariates_v7_step11500/rolling-step=11500.ckpt",
+  "checkpointBytes": 406795069,
+  "checkpointSha256": "d8bc355fed4c4a848e83583442e2594248756f6e5c3a70856b7e4c9a021d0b39",
+  "configuration": "inference.yaml",
+  "normalization": "measure_consistent_standardized_log",
+  "covariateEncoding": "semantic_generic_v1",
+  "censoringEncoding": "left_censoring_v1",
+  "solver": {"method": "heun", "steps": 8},
+  "downloadedDate": "2026-09-13",
+  "verified": {
+    "sha256": true,
+    "strictCheckpointLoad": true,
+    "suppliedCovariates": true,
+    "perTargetCounterfactual": true,
+    "unmodifiedTargetRowsPreserved": true,
+    "missingCovariatesAndFloor": true,
+    "knownLloqAndCens": true
+  }
+}

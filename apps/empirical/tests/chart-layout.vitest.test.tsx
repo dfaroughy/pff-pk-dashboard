@@ -1,10 +1,22 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vitest";
-import { PkDistributionChart, TrajectoryChart } from "../app/components/StudyCharts";
-import type { Study } from "../app/lib/types";
+import { Chart, PkDistributionChart, TrajectoryChart } from "../app/components/StudyCharts";
+import type { Point, Study } from "../app/lib/types";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+test.each([500, 1000])("renders %i dense individual curves without exceeding the JS argument limit", (count) => {
+  const series = Array.from({ length: count }, () =>
+    Array.from({ length: 1024 }, (_, i): Point => [i, 1 + i / 1024]));
+  for (const logY of [false, true]) {
+    const markup = renderToStaticMarkup(<Chart series={series} styles={[{ stroke: "blue" }]} logY={logY}
+      xLabel="Time" yLabel="Concentration" ariaLabel="Large cohort" />);
+    expect(markup).toContain("Large cohort");
+    expect(markup).not.toMatch(/NaN|Infinity/);
+  }
+});
 
 test("narrow charts wrap long concentration labels and retain space for data and ticks", () => {
   let resize: ResizeObserverCallback;

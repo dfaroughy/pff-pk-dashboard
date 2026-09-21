@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import unittest
+import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event, Thread
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+from unittest.mock import patch
 
 import numpy as np
 
@@ -11,6 +17,8 @@ from services.inference.pff_service import (
     MAX_DOSE_GENERATED_INDIVIDUALS,
     MAX_FLOW_STEPS,
     MAX_GENERATED_INDIVIDUALS,
+    Handler,
+    LocalServer,
     bounded_integer,
     build_cohort,
     generation_only_protocol,
@@ -18,6 +26,67 @@ from services.inference.pff_service import (
     target_dose_events,
 )
 from pff_pk.metrics.mesh_vpc import mesh_vpc_summary
+from services.inference.limits import individual_limit
+
+
+class LocalServerTests(unittest.TestCase):
+    def test_health_remains_responsive_during_inference_and_compute_is_serialized(self):
+        entered, release = Event(), Event()
+
+        def slow_inference(request):
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError("test did not release inference")
+            return {"ok": True}
+
+        server = LocalServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+
+        def post():
+            with urlopen(Request(base + "/inference", data=b"{}", headers={"Content-Type": "application/json"}), timeout=5) as response:
+                return json.load(response)
+
+        try:
+            with patch("services.inference.pff_service.cached_inference", side_effect=slow_inference), ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(post)
+                try:
+                    self.assertTrue(entered.wait(2))
+                    with urlopen(base + "/health", timeout=1) as response:
+                        self.assertIn("models", json.load(response))
+                    with self.assertRaises(HTTPError) as busy:
+                        post()
+                    self.assertEqual(busy.exception.code, 503)
+                    self.assertIn("busy generating", json.load(busy.exception)["error"])
+                finally:
+                    release.set()
+                self.assertEqual(pending.result(timeout=2), {"ok": True})
+                self.assertEqual(post(), {"ok": True})
+        finally:
+            release.set()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
+class LocalLimitTests(unittest.TestCase):
+    def test_large_cohorts_require_local_opt_in(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(individual_limit(100), 100)
+        with patch.dict("os.environ", {"PFF_LOCAL_LARGE_COHORTS": "1"}):
+            self.assertEqual(individual_limit(100), 1000)
+            self.assertEqual(bounded_integer(1000, "nDraws", 1, individual_limit(100)), 1000)
+            with self.assertRaises(ValueError):
+                bounded_integer(1001, "nDraws", 1, individual_limit(100))
+
+    def test_local_context_can_hold_1000_shared_grid_patients(self):
+        study = {"subjects": [{"id": str(i), "points": [[j / 64, 1] for j in range(1, 65)]}
+                              for i in range(1000)], "route": "oral"}
+        with patch.dict("os.environ", {"PFF_LOCAL_LARGE_COHORTS": "1"}):
+            self.assertEqual(len(build_cohort(study)["subjects"]), 1000)
+        with patch.dict("os.environ", {}, clear=True), self.assertRaises(ValueError):
+            build_cohort(study)
 
 
 class RequestValidationTests(unittest.TestCase):

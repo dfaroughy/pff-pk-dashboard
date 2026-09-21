@@ -1,0 +1,13 @@
+{
+  "modelId": "pythia_covariates",
+  "label": "Pythia_Covariates",
+  "globalStep": 112000,
+  "selection": "best full validation bank loss",
+  "validationLoss": 1.7774440029946463,
+  "checkpointSha256": "0cd3cdfdd1e6cf27f44cd4f9f201a437825a6fe607664e196ef25551aead55fd",
+  "checkpointBytes": 406795069,
+  "localCheckpointRelativeToPffPk": "artifacts/checkpoints/pythia_covariates_v7_step112000/step-000112000.ckpt",
+  "source": "Thunder completed 120k run: v7-thunder-recovery-76000-20260918",
+  "cometKey": "81db5ad37a5a4e0d9f333c5fce7925e3",
+  "releaseScope": "local-only"
+}

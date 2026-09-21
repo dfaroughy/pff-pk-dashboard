@@ -25,12 +25,21 @@ export function wrapAxisLabel(label: string, limit: number): string[] {
 }
 
 function bounds(series: Point[][], logY: boolean, fraction = false) {
-  const points = series.flat().filter(([, y]) => (fraction ? y >= 0 : y > 0) && Number.isFinite(y));
-  const xMax = Math.max(1, ...series.flat().map(([x]) => x).filter(Number.isFinite));
-  if (!points.length) return { xMin: 0, xMax, yMin: logY ? -1 : 0, yMax: 1 };
-  const yValues = points.map(([, y]) => logY ? Math.log10(y) : y);
-  let yMin = logY ? Math.min(...yValues) : 0;
-  let yMax = Math.max(...yValues);
+  // Never spread cohort-sized arrays into function arguments: dense curves can
+  // exceed the engine's argument limit even with only 500 individuals.
+  let xMax = 1;
+  let yMin = logY ? Infinity : 0;
+  let yMax = -Infinity;
+  let hasValues = false;
+  for (const curve of series) for (const [x, y] of curve) {
+    if (Number.isFinite(x)) xMax = Math.max(xMax, x);
+    if (!Number.isFinite(y) || !(fraction ? y >= 0 : y > 0)) continue;
+    const value = logY ? Math.log10(y) : y;
+    if (logY) yMin = Math.min(yMin, value);
+    yMax = Math.max(yMax, value);
+    hasValues = true;
+  }
+  if (!hasValues) return { xMin: 0, xMax, yMin: logY ? -1 : 0, yMax: 1 };
   if (logY) {
     if (yMin === yMax) { yMin -= 0.5; yMax += 0.5; }
     else {
@@ -218,12 +227,12 @@ export function ModelTrajectoryChart({ result, study, logY, showEmpirical, showL
     styles={[
       ...latent.map(() => ({ stroke: "var(--trajectory-blue)", opacity: 0.35, dash: "4 3" })),
       ...empirical.map(() => ({ stroke: "var(--trajectory-blue)", width: 1, opacity: 0.38, markers: true, radius: 1.4 })),
-      ...generated.map(() => ({ stroke: "var(--generated)", width: 1, opacity: 0.48, markers: true, radius: 1.25, dashBelowLloq: result.request.modelId === "pythia_covariates" })),
+      ...generated.map(() => ({ stroke: "var(--generated)", width: 1, opacity: 0.48, markers: true, radius: 1.25, dashBelowLloq: result.request.modelId === "pythia_covariates" || result.request.modelId === "tabpfn" || result.request.modelId === "tabpfn_ts" })),
     ]}
     logY={logY}
     xLabel={`Time (${result.units.time})`}
     yLabel={concentrationLabel(result.units.concentration)}
-    ariaLabel="Pythia-PK generated individual concentration profiles"
+    ariaLabel={result.request.modelId === "tabpfn" || result.request.modelId === "tabpfn_ts" ? `${result.request.modelId === "tabpfn_ts" ? "TabPFN-TS" : "TabPFN"} generated individual concentration profiles` : "Pythia-PK generated individual concentration profiles"}
   />;
 }
 
@@ -251,11 +260,11 @@ export function ModelVpcChart({ result, study, logY, showEmpirical }: { result: 
     logY={logY}
     xLabel={`Time (${result.units.time})`}
     yLabel={concentrationLabel(result.units.concentration)}
-    ariaLabel="Pythia-PK visual predictive check"
-  /><BlqChart points={model} timeUnit={study.timeUnit} /></>;
+    ariaLabel={result.request?.modelId === "tabpfn" || result.request?.modelId === "tabpfn_ts" ? `${result.request.modelId === "tabpfn_ts" ? "TabPFN-TS" : "TabPFN"} visual predictive check` : "Pythia-PK visual predictive check"}
+  /><BlqChart points={model} timeUnit={study.timeUnit} generatedLabel={result.request?.modelId === "tabpfn_ts" ? "TabPFN-TS" : result.request?.modelId === "tabpfn" ? "TabPFN" : "Pythia"} /></>;
 }
 
-function BlqChart({ points, timeUnit }: { points: { time: number; blq?: BlqPoint }[]; timeUnit: string }) {
+function BlqChart({ points, timeUnit, generatedLabel = "Pythia" }: { points: { time: number; blq?: BlqPoint }[]; timeUnit: string; generatedLabel?: string }) {
   if (!points.some(p => p.blq)) return null;
   const observed = (key: "lower" | "upper") => points.map(p => [p.time, p.blq?.observed[key] ?? NaN] as Point);
   const simulated = (key: "lower" | "upper" | "center") => points.map(p => [p.time, p.blq?.simulated?.[key] ?? NaN] as Point);
@@ -264,7 +273,7 @@ function BlqChart({ points, timeUnit }: { points: { time: number; blq?: BlqPoint
   return <div className="blq-panel">
     <div className="legend">
       <span className="legend-item"><i className="blue-line" />{uncertain ? "Study range (unresolved flags)" : "Study"}</span>
-      {generated && <span className="legend-item"><i className="red-line" />Pythia · 90% interval</span>}
+      {generated && <span className="legend-item"><i className="red-line" />{generatedLabel} · 90% interval</span>}
     </div>
     <Chart fraction logY={false} xLabel={`Time (${timeUnit})`} yLabel="Fraction below LLOQ" ariaLabel="Fraction of observations below the quantification limit"
       series={[observed("lower"), ...(uncertain ? [observed("upper")] : []), ...(generated ? [simulated("center")] : [])]}

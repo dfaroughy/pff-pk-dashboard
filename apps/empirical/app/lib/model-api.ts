@@ -2,12 +2,13 @@ import type { Client } from "@gradio/client";
 import type { BlqPoint, DoseEvent, Study } from "./types";
 import { dashboardRuntimeConfig } from "./runtime-config";
 
-export type ModelId = "pythia" | "pythia_dose" | "pythia_covariates";
+export type ModelId = "pythia" | "pythia_dose" | "pythia_covariates" | "tabpfn" | "tabpfn_ts";
 
 export type InferenceRequest = {
   modelId: ModelId;
   targetCovariates?: Record<string, number | string>[];
   provideLloq?: boolean;
+  targetTimes?: number[];
   study: Pick<Study, "id" | "drug" | "study" | "source" | "route" | "dose" | "doseUnit" | "doseEvents" | "concentrationUnit" | "timeUnit" | "subjects" | "assay">;
   doseEvents: DoseEvent[];
   nDraws: number;
@@ -20,9 +21,10 @@ export type InferenceResponse = {
   inferenceId: string;
   createdAt: string;
   checkpointId: string;
-  request: Omit<InferenceRequest, "study" | "batchSize"> & { studyId: string };
+  request: Omit<InferenceRequest, "study" | "batchSize" | "solver"> & { studyId: string; solver?: InferenceRequest["solver"] };
   queryTime: number[];
   generatedConcentration: number[][];
+  observationPredictions?: { queryTime: number[]; generatedConcentration: number[][] };
   vpc: {
     method: "mesh_bootstrap" | "pharmpy"; // Accept archived responses during rollout.
     methodVersion?: string;
@@ -60,6 +62,7 @@ export type ModelStatus = {
   modelId?: ModelId;
   label?: string;
   supportsDose?: boolean;
+  maxGeneratedIndividuals?: number;
 };
 
 export type ServiceStatus = ModelStatus & {

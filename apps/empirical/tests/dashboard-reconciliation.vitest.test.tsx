@@ -54,14 +54,14 @@ test("repeated synthetic draws retain exactly one model panel without duplicate 
   for (let i = 0; i < 5; i++) {
     await userEvent.click(screen.getByRole("button", { name: "Test new cohort" }));
     await waitFor(() => expect(screen.getAllByRole("combobox", { name: "Models" })).toHaveLength(1));
-    expect(screen.getAllByRole("heading", { name: "Prior-fitted flows" })).toHaveLength(1);
+    expect(screen.getAllByRole("heading", { name: "Generative models" })).toHaveLength(1);
     expect(screen.getByText("Covariate analysis").closest("details")?.open).toBe(true);
     expect(screen.getByRole("switch", { name: "Covariate VPC linear scale" })).toBeTruthy();
     expect(screen.queryByLabelText("Covariate concentration scale")).toBeNull();
     expect(screen.queryByText("Solid: study · dashed: generated · censored study values omitted.")).toBeNull();
   }
   await userEvent.click(screen.getByRole("button", { name: "Test invalidate cohort" }));
-  expect(screen.getAllByRole("heading", { name: "Prior-fitted flows" })).toHaveLength(1);
+  expect(screen.getAllByRole("heading", { name: "Generative models" })).toHaveLength(1);
   await userEvent.click(screen.getByRole("button", { name: "Test new cohort" }));
   expect(screen.getAllByRole("combobox", { name: "Models" })).toHaveLength(1);
   expect(errors.mock.calls.filter(args => args.some(a => String(a).includes("same key")))).toEqual([]);

@@ -7,6 +7,40 @@ from services.inference.pff_service import build_cohort, requested_model
 
 
 class CovariateBatchTests(unittest.TestCase):
+    def test_generated_v7_generic_fields_reach_context_and_targets(self):
+        from services.inference.synthetic_service import generate
+        study = generate({"version": "v7", "seed": 9877795,
+                          "individuals": 32, "observations": 16})["study"]
+        batch, _, _ = self.batch(study)
+        self.assertTrue(batch.context_covariate_mask[..., -2:].all())
+        targets = [{key: subject["covariates"][key]
+                    for key in ("cov_cont_0", "cov_cat_0")}
+                   for subject in study["subjects"][:2]]
+        rows, values, masks = target_covariate_rows(targets, 2, batch)
+        self.assertTrue(masks[..., -2:].all())
+        self.assertTrue(torch.isfinite(values).all())
+        self.assertEqual(rows[0]["cov_cont_0"], targets[0]["cov_cont_0"])
+        self.assertEqual(rows[0]["cov_cat_0"], str(targets[0]["cov_cat_0"]))
+
+    def test_dashboard_generic_aliases_match_training_schema_mapping(self):
+        from services.inference.synthetic_service import dashboard_covariates
+        from pff_pk.tasks.generic_covariates import generic_rows
+        for schema in (
+            [{"name": "cov_0", "type": "continuous"}, {"name": "cov_1", "type": "categorical"}],
+            [{"name": "cov_0", "type": "categorical"}, {"name": "cov_1", "type": "continuous"}],
+            [{"name": "cov_0", "type": "continuous"}, {"name": "cov_1", "type": "continuous"}],
+            [],
+        ):
+            raw = {"cov_0": 0, "cov_1": 2, "weight_kg": 70}
+            typed = dashboard_covariates(raw, schema)
+            expected_values, expected_mask, _ = generic_rows([raw], schema)
+            values, mask, _ = generic_rows([typed])
+            self.assertTrue(torch.equal(values, expected_values))
+            self.assertTrue(torch.equal(mask, expected_mask))
+            self.assertEqual(typed["weight_kg"], 70)
+        self.assertEqual(dashboard_covariates({"cov_0": 3, "cov_cont_0": None},
+                         [{"name": "cov_0", "type": "continuous"}]), {"cov_cont_0": None})
+
     def test_lloq_mask_preserves_every_other_batch_field(self):
         study = self.study()
         study["assay"] = {"lloq": 1.0}

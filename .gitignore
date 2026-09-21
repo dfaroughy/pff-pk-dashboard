@@ -7,6 +7,7 @@ apps/*/.next/
 apps/*/.vinext/
 apps/*/.wrangler/
 apps/*/outputs/
-services/**/__pycache__/
+__pycache__/
+*.py[cod]
 .cache/
 dist/

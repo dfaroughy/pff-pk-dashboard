@@ -4,7 +4,7 @@ import json
 import unittest
 
 import numpy as np
-from services.inference.synthetic_service import describe, generate, synthetic_request, _resampled_indices
+from services.inference.synthetic_service import describe, generate, synthetic_request, _resampled_indices, dashboard_covariates
 
 from synthetic_priors import generate_profile_study, get_profile
 from synthetic_priors.corpus.identity import digest
@@ -19,12 +19,15 @@ class CanonicalSyntheticTests(unittest.TestCase):
         self.assertEqual(actual["provenance"]["dashboardCovariates"], "truth")
         for subject, original in zip(actual["study"]["subjects"], expected["individuals"], strict=True):
             truth = expected["truth"]["individuals"][original["id"]]
-            self.assertEqual(subject["covariates"], {**truth["hidden_covariates"], **original["covariates"]})
+            self.assertEqual(subject["covariates"], dashboard_covariates(
+                {**truth["hidden_covariates"], **original["covariates"]},
+                expected["truth"]["covariate_model"]["roster"]))
             self.assertTrue(all(key in subject["covariates"] for key in ("age_years", "weight_kg", "sex")))
 
     def test_profiles_equal_production(self):
         for version in ("v1", "v6", "v7"):
             actual = generate({"version": version, "seed": 30, "individuals": 3})
+            self.assertTrue(all(len(subject["points"]) == 64 for subject in actual["study"]["subjects"]))
             expected = generate_profile_study(version, 30, n_individuals=3, observation_points=128)
             self.assertEqual(actual["provenance"]["recordSha256"], digest(expected))
             self.assertEqual(actual["provenance"]["sha256"], get_profile(version).sha256)
@@ -40,7 +43,7 @@ class CanonicalSyntheticTests(unittest.TestCase):
                         "version": "v7",
                         "seed": 30,
                         "individuals": 3,
-                        "observations": 20,
+                        "observations": 64,
                         "schedule": schedule,
                         "shape": shape,
                     }
@@ -52,7 +55,7 @@ class CanonicalSyntheticTests(unittest.TestCase):
                     t, c, _ = observation_view(
                         source, person, "random" if schedule == "unscheduled" else "regular"
                     )
-                    self.assertEqual(len(subject["points"]), 20)
+                    self.assertEqual(len(subject["points"]), 64)
                     self.assertTrue(np.all(np.diff([p[0] for p in subject["points"]]) > 0))
                     self.assertEqual(subject["points"][-1][0], 1)
                     self.assertTrue(
@@ -108,7 +111,7 @@ class CanonicalSyntheticTests(unittest.TestCase):
             {"mlpSeed": -1},
             {"mlpSeed": True},
             {"version": "v1", "mlpSeed": 1},
-            {"observations": 21},
+            {"observations": 65},
             {"seed": -1},
             {"seed": True},
             {"overrides": {"physiology.enabled": False}},

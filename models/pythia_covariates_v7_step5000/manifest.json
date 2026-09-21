@@ -1,0 +1,19 @@
+{
+  "modelId": "pythia_covariates",
+  "label": "Pythia-Covariates",
+  "scope": "local-only",
+  "globalStep": 5000,
+  "trainingBudget": 120000,
+  "jobId": "61430867",
+  "runId": "v7-production-2gpu-61430867__54f429115cdebfc1fceee08c09e5c122",
+  "remoteCheckpoint": "/scratch/df630/pfff/v7_training_20260911_24h_bP9iqO/production/v7-production-2gpu-61430867__54f429115cdebfc1fceee08c09e5c122/checkpoints/rolling-step=5000.ckpt",
+  "localCheckpointRelativeToPffPk": "artifacts/checkpoints/pythia_covariates_v7_step5000/rolling-step=5000.ckpt",
+  "checkpointBytes": 406795069,
+  "checkpointSha256": "f2a95b00686ca4a9bde9181adf6c0297bc16dad0eebb9a0164cce96c500a3a2e",
+  "configuration": "inference.yaml",
+  "normalization": "measure_consistent_standardized_log",
+  "covariateEncoding": "semantic_generic_v1",
+  "censoringEncoding": "left_censoring_v1",
+  "solver": {"method": "heun", "steps": 8},
+  "downloadedDate": "2026-09-12"
+}

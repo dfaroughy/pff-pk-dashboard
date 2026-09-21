@@ -15,8 +15,9 @@ import os
 import sys
 import time
 from dataclasses import replace
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +41,8 @@ from pff_pk.inference.empirical import (  # noqa: E402
 from pff_pk.inference.model import load_inference_model  # noqa: E402
 
 from services.inference.censored_vpc import DASHBOARD_VPC_VERSION, dashboard_vpc_summary  # noqa: E402
+from services.inference.limits import individual_limit  # noqa: E402
+from services.inference.observation_protocol import apply_target_times  # noqa: E402
 from services.inference.covariate_batch import covariate_cohort_batch, mask_lloq_input, target_covariate_rows  # noqa: E402
 
 DEFAULT_CONFIG = PFF_ROOT / "configs" / "amarel_v6_protocol_counterfactual_phase2_sparse.yaml"
@@ -72,8 +75,9 @@ VPC_SEED_OFFSET = 104729
 PYTHIA_MODEL = "pythia"
 PYTHIA_DOSE_MODEL = "pythia_dose"
 PYTHIA_COVARIATES_MODEL = "pythia_covariates"
-DEFAULT_COVARIATES_DIRECTORY = PFF_ROOT / "artifacts/checkpoints/pythia_covariates_v7_step25750"
+DEFAULT_COVARIATES_DIRECTORY = PFF_ROOT / "artifacts/checkpoints/pythia_covariates_v7_step112000"
 DEFAULT_MODEL = PYTHIA_DOSE_MODEL
+LOCAL_TABPFN = None  # Registered only by main() on a loopback listener, never by hosted imports.
 
 
 def allowed_origins() -> set[str]:
@@ -116,8 +120,10 @@ def bounded_integer(value: Any, field: str, low: int, high: int) -> int:
 def requested_model(request: dict[str, Any]) -> str:
     """Resolve a public model identifier with a dose-capable default."""
     model_id = str(request.get("modelId", DEFAULT_MODEL)).strip().lower()
+    if model_id in {"tabpfn", "tabpfn_ts"} and LOCAL_TABPFN is not None:
+        return model_id
     if model_id not in {PYTHIA_MODEL, PYTHIA_DOSE_MODEL, PYTHIA_COVARIATES_MODEL}:
-        raise ValueError("modelId must be pythia, pythia_dose, or pythia_covariates")
+        raise ValueError("modelId must be pythia, pythia_dose, pythia_covariates, tabpfn, or tabpfn_ts")
     return model_id
 
 
@@ -140,9 +146,9 @@ def build_cohort(study: dict[str, Any]) -> dict[str, Any]:
     raw_subjects = study.get("subjects") or []
     if not isinstance(raw_subjects, list):
         raise ValueError("study subjects must be a list")
-    if len(raw_subjects) > MAX_CONTEXT_INDIVIDUALS:
+    if len(raw_subjects) > individual_limit(MAX_CONTEXT_INDIVIDUALS):
         raise ValueError(
-            f"PFF inference accepts at most {MAX_CONTEXT_INDIVIDUALS} individuals"
+            f"PFF inference accepts at most {individual_limit(MAX_CONTEXT_INDIVIDUALS)} individuals"
         )
     raw_observations = 0
     for subject in raw_subjects:
@@ -154,9 +160,10 @@ def build_cohort(study: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw_points, list):
             raise ValueError(f"points for subject {identifier!r} must be a list")
         raw_observations += len(raw_points)
-        if raw_observations > MAX_CONTEXT_OBSERVATIONS:
+        observation_limit = 128_000 if individual_limit(100) == 1000 else MAX_CONTEXT_OBSERVATIONS
+        if raw_observations > observation_limit:
             raise ValueError(
-                f"PFF inference accepts at most {MAX_CONTEXT_OBSERVATIONS} observations"
+                f"PFF inference accepts at most {observation_limit} observations"
             )
         for index, point in enumerate(raw_points):
             if not isinstance(point, list) or len(point) != 2:
@@ -323,6 +330,7 @@ class ModelRuntime:
             "modelId": self.model_id,
             "label": self.label,
             "supportsDose": self.supports_dose,
+            "maxGeneratedIndividuals": MAX_DOSE_GENERATED_INDIVIDUALS if self.model_id == PYTHIA_DOSE_MODEL else individual_limit(MAX_GENERATED_INDIVIDUALS),
             "ready": self.config_path.is_file() and self.checkpoint_path.is_file(),
             "loaded": self.loaded is not None,
             "device": "cpu",
@@ -361,7 +369,7 @@ class ModelRuntime:
             request.get("nDraws", DEFAULT_GENERATED_INDIVIDUALS),
             "nDraws",
             1,
-            MAX_GENERATED_INDIVIDUALS
+            individual_limit(MAX_GENERATED_INDIVIDUALS)
             if self.model_id in {PYTHIA_MODEL, PYTHIA_COVARIATES_MODEL}
             else MAX_DOSE_GENERATED_INDIVIDUALS,
         )
@@ -404,6 +412,9 @@ class ModelRuntime:
             cpu_batch = with_context_protocols(cpu_batch, request.get("study") or {}, cohort)
         if self.model_id != PYTHIA_COVARIATES_MODEL:
             cpu_batch = union_query_batch(cpu_batch)
+        observed_query = cpu_batch.target_time.flatten().clone()
+        cpu_batch, output_indices = apply_target_times(cpu_batch, request.get("targetTimes"), cohort["horizon"])
+        observed_indices = torch.searchsorted(cpu_batch.target_time.flatten(), observed_query).numpy()
         query_time = cpu_batch.target_time.numpy()[0, :, 0] * cohort["horizon"]
         seed = bounded_integer(request.get("seed", 9877795), "seed", 0, 2**31 - 1)
         started = time.perf_counter()
@@ -430,15 +441,20 @@ class ModelRuntime:
                 physical = inverse_concentration(normalized, repeated).float().cpu().numpy()
             chunks.append(physical[..., 0])
         samples = np.concatenate(chunks, axis=0)
+        observed_time = query_time[observed_indices]
+        observed_samples = samples[:, observed_indices]
         vpc = dashboard_vpc_summary(
-            samples,
-            query_time,
+            observed_samples,
+            observed_time,
             cohort,
             study=request.get("study"),
             replicates=VPC_REPLICATES,
             seed=seed + VPC_SEED_OFFSET,
         )
         elapsed = time.perf_counter() - started
+        if output_indices is not None:
+            samples = samples[:, output_indices]
+            query_time = np.asarray(request["targetTimes"], dtype=float)
         return {
             "inferenceId": "",
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -450,12 +466,16 @@ class ModelRuntime:
                 "nDraws": n_draws,
                 "solver": {"method": method, "steps": steps},
                 "seed": seed,
+                **({"targetTimes": request["targetTimes"]} if output_indices is not None else {}),
                 **({"targetCovariates": target_rows} if target_rows is not None else {}),
                 **({"provideLloq": request.get("provideLloq", True)}
                    if self.model_id == PYTHIA_COVARIATES_MODEL else {}),
             },
             "queryTime": query_time.tolist(),
             "generatedConcentration": samples.tolist(),
+            **({"observationPredictions": {"queryTime": observed_time.tolist(),
+                                           "generatedConcentration": observed_samples.tolist()}}
+               if output_indices is not None else {}),
             "vpc": vpc,
             "units": {"time": cohort["time_units"], "concentration": cohort["concentration_units"]},
             "provenance": {
@@ -479,10 +499,10 @@ def configured_path(primary: str, legacy: str | None, default: Path) -> Path:
 RUNTIMES = {
     PYTHIA_COVARIATES_MODEL: ModelRuntime(
         model_id=PYTHIA_COVARIATES_MODEL,
-        label="Pythia-Covariates",
+        label="Pythia_Covariates",
         supports_dose=True,
-        config_path=configured_path("PFF_COVARIATES_CONFIG", None, REPOSITORY_ROOT / "models/pythia_covariates_v7_step25750/inference.yaml"),
-        checkpoint_path=configured_path("PFF_COVARIATES_CHECKPOINT", None, DEFAULT_COVARIATES_DIRECTORY / "rolling-step=25750.ckpt"),
+        config_path=configured_path("PFF_COVARIATES_CONFIG", None, REPOSITORY_ROOT / "models/pythia_covariates_v7_step112000/inference.yaml"),
+        checkpoint_path=configured_path("PFF_COVARIATES_CHECKPOINT", None, DEFAULT_COVARIATES_DIRECTORY / "step-000112000.ckpt"),
     ),
     PYTHIA_MODEL: ModelRuntime(
         model_id=PYTHIA_MODEL,
@@ -522,6 +542,9 @@ def service_status() -> dict[str, Any]:
         for model_id, runtime in RUNTIMES.items()
     }
     default = models[DEFAULT_MODEL]
+    if LOCAL_TABPFN is not None:
+        models["tabpfn"] = LOCAL_TABPFN.metadata()
+        models["tabpfn_ts"] = LOCAL_TABPFN.metadata("tabpfn_ts")
     return {
         "ready": bool(default["ready"]),
         "loaded": bool(default["loaded"]),
@@ -536,6 +559,8 @@ def cached_inference(request: dict[str, Any]) -> dict[str, Any]:
     """Run one validated request and persist the immutable response by content hash."""
     if not isinstance(request, dict):
         raise ValueError("inference request must be a JSON object")
+    if requested_model(request) in {"tabpfn", "tabpfn_ts"}:
+        return LOCAL_TABPFN.infer(request, CACHE_ROOT, build_cohort)
     runtime = runtime_for_request(request)
     runtime.load()
     cache_key = {
@@ -557,6 +582,14 @@ def cached_inference(request: dict[str, Any]) -> dict[str, Any]:
     temporary.write_text(json.dumps(result, separators=(",", ":")), encoding="utf-8")
     temporary.replace(destination)
     return result
+
+
+class LocalServer(ThreadingHTTPServer):
+    """Keep health checks responsive while allowing just one compute request."""
+
+    def __init__(self, address, handler):
+        super().__init__(address, handler)
+        self.work_lock = Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -595,11 +628,20 @@ class Handler(BaseHTTPRequestHandler):
         if self.path not in ("/inference", "/synthetic"):
             self._send(404, {"error": "not found"})
             return
+        if not self.server.work_lock.acquire(blocking=False):
+            self._send(503, {"error": "The local service is busy generating. Wait for the current request to finish, then retry."})
+            return
         try:
             length = int(self.headers.get("content-length", "0"))
             if length <= 0 or length > 10_000_000:
                 raise ValueError("invalid request size")
             request = json.loads(self.rfile.read(length))
+            if isinstance(request, dict) and request.get("modelId") == "tabpfn":
+                from urllib.parse import urlsplit
+                origin = self.headers.get("origin")
+                if self.client_address[0] not in {"127.0.0.1", "::1"} or (origin and urlsplit(origin).hostname not in {"localhost", "127.0.0.1", "::1"}):
+                    self._send(403, {"error": "TabPFN is available only to the local research dashboard"})
+                    return
             if self.path == "/synthetic":
                 from services.inference.synthetic_service import synthetic_request
                 self._send(200, synthetic_request(request))
@@ -609,16 +651,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": str(error)})
         except Exception as error:  # keep the local service alive and report cleanly
             self._send(500, {"error": f"inference failed: {error}"})
+        finally:
+            self.server.work_lock.release()
 
     def log_message(self, message: str, *args: Any) -> None:
         print(f"[{self.log_date_time_string()}] {message % args}", flush=True)
 
 
 def main() -> None:
+    global LOCAL_TABPFN
+    # Only the standalone local server opts in; the public Space imports this module.
+    os.environ.setdefault("PFF_LOCAL_LARGE_COHORTS", "1")
     host = os.environ.get("PFF_API_HOST", "127.0.0.1")
+    if host in {"127.0.0.1", "localhost"} and os.environ.get("PFF_LOCAL_TABPFN", "1") == "1":
+        from services.inference.tabpfn_bridge import TabPFNRuntime
+        LOCAL_TABPFN = TabPFNRuntime()
     port = int(os.environ.get("PFF_API_PORT", "8791"))
     print(json.dumps({"service": f"http://{host}:{port}", **service_status()}, indent=2))
-    HTTPServer((host, port), Handler).serve_forever()
+    LocalServer((host, port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

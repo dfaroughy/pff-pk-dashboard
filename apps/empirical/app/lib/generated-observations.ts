@@ -5,9 +5,11 @@ import type { Point, Study } from "./types";
  * The full union-time pool remains untouched for design-matched VPC resampling.
  */
 export function generatedObservationCurves(
-  result: Pick<InferenceResponse, "queryTime" | "generatedConcentration">,
+  result: Pick<InferenceResponse, "queryTime" | "generatedConcentration"> & Partial<Pick<InferenceResponse, "request">>,
   study: Pick<Study, "subjects">,
 ): Point[][] {
+  if (result.request?.targetTimes) return result.generatedConcentration.map(values =>
+    result.queryTime.flatMap((time, i) => Number.isFinite(values[i]) ? [[time, values[i]] as Point] : []));
   const schedules = study.subjects
     .map((subject) => subject.points.filter(([time, value]) => time >= 0 && value > 0))
     .filter((points) => points.length >= 2);

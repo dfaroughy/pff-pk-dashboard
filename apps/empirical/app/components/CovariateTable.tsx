@@ -1,6 +1,7 @@
 import type { Study } from "../lib/types";
 
 const labels: Record<string, string> = {
+  cov_cont_0: "Generic continuous", cov_cat_0: "Generic categorical",
   weight_kg: "Weight (kg)", age_years: "Age (years)", height_cm: "Height (cm)",
   sex: "Sex", sex_source_code: "Sex (source code)",
   creatinine_clearance_ml_min: "Creatinine clearance (mL/min)",

@@ -16,6 +16,11 @@ function withoutTrailingSlash(value: string) {
   return value.replace(/\/$/, "");
 }
 
+export function dashboardIndividualLimit(): number {
+  const host = new URL(dashboardRuntimeConfig().apiRoot).hostname;
+  return host === "localhost" || host === "127.0.0.1" ? 1000 : 100;
+}
+
 export function dashboardRuntimeConfig(): DashboardRuntimeConfig {
   const configured = typeof window === "undefined" ? undefined : window.PFF_DASHBOARD_CONFIG;
   const apiRoot = withoutTrailingSlash(configured?.apiRoot ?? "http://127.0.0.1:8791");

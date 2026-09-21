@@ -137,7 +137,7 @@ test.each(["v1", "v6", "v7"] as const)(
       seed: 9877795,
       individuals: 16,
       schedule: "exact",
-      observations: 20,
+      observations: 64,
     });
     expect(onGenerate.mock.calls[0][0].source).toBe("canonical");
     for (const button of screen.getAllByRole("button").filter(button => button.hasAttribute("aria-expanded"))) {
@@ -189,7 +189,7 @@ test("updates valid quantities and rejects out-of-range drafts without clamping"
     target: { value: "6" },
   });
   fireEvent.change(screen.getByLabelText("Cohort individuals"), {
-    target: { value: "999" },
+    target: { value: "1001" },
   });
   fireEvent.change(screen.getByLabelText("Observations per individual"), {
     target: { value: "99" },
@@ -198,13 +198,13 @@ test("updates valid quantities and rejects out-of-range drafts without clamping"
   expect(request.mock.calls.at(-1)![0]).toMatchObject({
     seed: 47,
     individuals: 16,
-    observations: 20,
+    observations: 64,
     overrides: {},
   });
   const individuals = screen.getByLabelText("Cohort individuals") as HTMLInputElement;
-  expect(individuals.value).toBe("999");
+  expect(individuals.value).toBe("1001");
   fireEvent.blur(individuals);
-  expect(individuals.value).toBe("999");
+  expect(individuals.value).toBe("1001");
   expect(screen.getByRole("alert").textContent).toContain("Not applied");
   await user.clear(individuals);
   expect(individuals.value).toBe("");

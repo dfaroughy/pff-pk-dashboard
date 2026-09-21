@@ -40,3 +40,16 @@ export function applySyntheticCensoring(study: Study, lloq: number): Study {
         points: latent.map(([t, c]) => [t, Math.max(c, lloq)]) };
     }) };
 }
+
+export function applyEmpiricalCensoring(study: Study, lloq: number): Study {
+  const native = study.assay?.lloq ?? 0;
+  if (!Number.isFinite(lloq) || lloq < native || lloq < 0) throw new Error("LLOQ cannot be below the reported assay floor");
+  if (lloq === native) return study;
+  return { ...study, id: `${study.id}-lloq-${lloq}`, observedVpc: undefined,
+    assay: { lloq, source: "User-selected assay floor" }, censoringApplied: true,
+    subjects: study.subjects.map(s => ({ ...s,
+      cens: s.points.map(([, c], i) => c < lloq ? 1 : (s.cens?.[i] ?? (s.cens?.[i] === null ? null : 0))),
+      points: s.points.map(([t, c]) => [t, Math.max(c, lloq)]),
+    })),
+  };
+}

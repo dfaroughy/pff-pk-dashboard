@@ -16,6 +16,7 @@ vi.mock("../app/lib/model-api", () => ({
       pythia: { ready: true, loaded: false, device: "cpu", checkpointId: "digital.ckpt", modelId: "pythia", label: "Pythia", supportsDose: false },
       pythia_dose: { ready: true, loaded: true, device: "cpu", checkpointId: "dose.ckpt", modelId: "pythia_dose", label: "Pythia-Dose", supportsDose: true },
       pythia_covariates: { ready: true, loaded: true, device: "cpu", checkpointId: "covariates.ckpt", modelId: "pythia_covariates", label: "Pythia-Covariates", supportsDose: true },
+      tabpfn: { ready: true, loaded: false, device: "cpu", checkpointId: "tabpfn-3.5", modelId: "tabpfn", label: "TabPFN", supportsDose: false },
     },
   }),
 }));
@@ -75,6 +76,49 @@ const response: InferenceResponse = {
   units: { time: "h", concentration: "ng/mL" },
   provenance: { checkpointSha256: "abc", normalization: "test", sourceProcess: {}, device: "cpu", runtimeSeconds: 0.1 },
 };
+
+test("observation protocol submits a separate grid without changing context", async () => {
+  mocks.runInference.mockResolvedValue(response);
+  const user = userEvent.setup();
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Run model" }) as HTMLButtonElement).disabled).toBe(false));
+  await user.selectOptions(screen.getByLabelText("Target grid"), "uniform");
+  expect((screen.getByLabelText("Target end time") as HTMLInputElement).value).toBe("24");
+  await user.clear(screen.getByLabelText("Target time points"));
+  await user.type(screen.getByLabelText("Target time points"), "3");
+  await user.click(screen.getByRole("button", { name: "Run model" }));
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalled());
+  const request = mocks.runInference.mock.calls.at(-1)![0];
+  expect(request.targetTimes).toEqual([0, 12, 24]);
+  expect(request.study.subjects).toEqual(study.subjects);
+});
+
+test("TabPFN uses the entire study, hides dose controls and adds no banners", async () => {
+  mocks.runInference.mockResolvedValue({ ...response, request: { ...response.request, modelId: "tabpfn" } });
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
+  await screen.findByRole("option", { name: "TabPFN" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Models" }), "tabpfn");
+  expect(screen.queryByRole("button", { name: "+ Add intervention" })).toBeNull();
+  expect(document.querySelectorAll(".model-warning")).toHaveLength(0);
+  const count = screen.getByRole("spinbutton", { name: "Generated individuals" });
+  await userEvent.clear(count);
+  await userEvent.type(count, "50");
+  await userEvent.click(screen.getByRole("button", { name: "Run model" }));
+  await waitFor(() => expect(mocks.runInference).toHaveBeenCalledOnce());
+  expect(mocks.runInference.mock.calls[0][0]).toMatchObject({ modelId: "tabpfn", nDraws: 50, study: { subjects: study.subjects }, doseEvents: study.doseEvents });
+  expect(mocks.runInference.mock.calls[0][0].targetCovariates).toBeUndefined();
+});
+
+test("TabPFN is not offered for a hosted API even if advertised", async () => {
+  window.PFF_DASHBOARD_CONFIG = { apiRoot: "https://example.hf.space" };
+  try {
+    render(<ModelPanel study={study} onResult={vi.fn()} />);
+    await screen.findByRole("option", { name: "Pythia-Covariates" });
+    expect(screen.queryByRole("option", { name: "TabPFN" })).toBeNull();
+  } finally {
+    delete window.PFF_DASHBOARD_CONFIG;
+  }
+});
 
 test("known LLOQ is provided automatically without changing study observations", async () => {
   mocks.runInference.mockResolvedValue(response);
@@ -260,6 +304,7 @@ test("imports a standard event table after route metadata is selected", async ()
 afterEach(() => {
   cleanup();
   mocks.runInference.mockReset();
+  delete window.PFF_DASHBOARD_CONFIG;
 });
 
 test("accepts the empirical page default seed", () => {
@@ -268,6 +313,7 @@ test("accepts the empirical page default seed", () => {
 });
 
 test("exposes only conservative public inference controls", async () => {
+  window.PFF_DASHBOARD_CONFIG = { apiRoot: "https://dariusfar-pff-pk-api.hf.space" };
   render(<ModelPanel study={study} onResult={vi.fn()} />);
 
   const run = screen.getByRole("button", { name: "Run model" });
@@ -285,6 +331,7 @@ test("exposes only conservative public inference controls", async () => {
 });
 
 test("uses model-specific generation limits", async () => {
+  window.PFF_DASHBOARD_CONFIG = { apiRoot: "https://dariusfar-pff-pk-api.hf.space" };
   const user = userEvent.setup();
   render(<ModelPanel study={study} onResult={vi.fn()} />);
   const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
@@ -300,6 +347,23 @@ test("uses model-specific generation limits", async () => {
   await user.selectOptions(screen.getByLabelText("Models"), "pythia_dose");
   expect(draws.max).toBe("30");
   expect(draws.valueAsNumber).toBe(30);
+});
+
+test("local Pythia and covariate generation allow 1000 individuals", async () => {
+  window.PFF_DASHBOARD_CONFIG = { apiRoot: "http://127.0.0.1:8791" };
+  const user = userEvent.setup();
+  render(<ModelPanel study={study} onResult={vi.fn()} />);
+  const draws = screen.getByLabelText("Generated individuals") as HTMLInputElement;
+  expect(draws.max).toBe("1000");
+  await user.clear(draws);
+  await user.type(draws, "1000");
+  expect(draws.getAttribute("aria-invalid")).toBe("false");
+  await waitFor(() => expect(screen.getByRole("option", { name: "Pythia-Covariates" })).toBeTruthy());
+  await user.selectOptions(screen.getByLabelText("Models"), "pythia_covariates");
+  expect(draws.max).toBe("1000");
+  expect(draws.valueAsNumber).toBe(1000);
+  await user.type(draws, "1");
+  expect(draws.getAttribute("aria-invalid")).toBe("true");
 });
 
 test("renders the server-side Pharmpy VPC summary", () => {

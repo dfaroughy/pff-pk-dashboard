@@ -1,12 +1,15 @@
 "use client";
 import { NumericEdit } from "./NumericEdit";
-import { applySyntheticCensoring, drawCensoring, withAssayMetadata } from "../lib/censoring";
+import { targetGrid, type GridMode } from "../lib/observation-protocol";
+import { modelLabel as getModelLabel } from "../lib/model-label";
+import { modelEvaluationStudy } from "../lib/model-study";
+import { applyEmpiricalCensoring, applySyntheticCensoring, drawCensoring, withAssayMetadata } from "../lib/censoring";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { runInference, serviceStatus, syntheticRequest, type InferenceResponse, type ModelId, type ServiceStatus } from "../lib/model-api";
 import { contextDoseRatio, doseEventDraft, observedProtocol, sharedObservedProtocol, studyHorizon, validateDoseProtocol, validateInteger, type DoseEventDraft } from "../lib/protocol";
 import { MAX_UPLOAD_BYTES, parsePkDataset, type UploadRoute } from "../lib/pk-upload";
-import { dashboardRuntimeConfig } from "../lib/runtime-config";
+import { dashboardIndividualLimit, dashboardRuntimeConfig } from "../lib/runtime-config";
 import type { Corpus, Study } from "../lib/types";
 import { ModelTrajectoryChart, ModelVpcChart, PkDistributionChart, TrajectoryChart, VpcChart } from "./StudyCharts";
 import { SyntheticStudyBuilder } from "./SyntheticStudyBuilder";
@@ -267,6 +270,11 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
   const [events, setEvents] = useState<DoseEventDraft[]>(resetDrafts);
   const [nextEventId, setNextEventId] = useState(initialProtocol.length);
   const [draws, setDraws] = useState("20");
+  const [gridMode, setGridMode] = useState<GridMode>("study");
+  const [gridStart, setGridStart] = useState("0");
+  const [gridEnd, setGridEnd] = useState<string | null>(null);
+  const [gridCount, setGridCount] = useState("64");
+  const [customTimes, setCustomTimes] = useState("");
   const [modelId, setModelId] = useState<ModelId>("pythia");
   const provideLloq = Number.isFinite(study.assay?.lloq) && (study.assay?.lloq ?? 0) > 0;
   const [targetDrafts, setTargetDrafts] = useState<TargetDraft[]>([]);
@@ -290,18 +298,20 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
     setError("");
     onResult(null);
   }, [contextProtocolKey, onResult]);
-  const maxDraws = modelId === "pythia_dose" ? 30 : 100;
+  const maxDraws = modelId === "pythia_dose" ? 30 : dashboardIndividualLimit();
   const eligible = study.subjects.filter((subject) => subject.points.length >= 2).length >= 2;
   const canonicalRoute = ["oral", "iv", "intravenous"].includes(study.route.toLowerCase());
   const protocol = useMemo(() => validateDoseProtocol(events, horizon), [events, horizon]);
   const drawsError = validateInteger(draws, 1, maxDraws);
   const seedError = validateInteger(seed, 0, 2**31 - 1);
+  const supportsTargetGrid = modelId !== "tabpfn" && modelId !== "tabpfn_ts";
+  const grid = targetGrid(supportsTargetGrid ? gridMode : "study", gridStart, gridEnd ?? String(horizon), gridCount, customTimes);
   const targetCount = Number.isInteger(Number(draws)) ? Math.max(0, Math.min(maxDraws, Number(draws))) : 0;
   const population = useMemo(() => sampleTargetPopulation(study, patientColumns, populationRules, targetCount, Number(seed)), [study, patientColumns, populationRules, targetCount, seed]);
   const effectiveTargets = population.rows.map((row, i) => ({ ...row, ...targetDrafts[i] }));
   const targetsInvalid = modelId === "pythia_covariates" && (Boolean(population.error) || effectiveTargets.some((row) =>
     patientColumns.some((column) => invalidTarget(row[column.key] ?? "", column))));
-  const controlsValid = (modelId === "pythia" || (!individualDosing && protocol.valid)) && !drawsError && !seedError && !targetsInvalid;
+  const controlsValid = (modelId === "pythia" || modelId === "tabpfn" || modelId === "tabpfn_ts" || (!individualDosing && protocol.valid)) && !drawsError && !seedError && !targetsInvalid && !grid.error;
   const selectedStatus = status?.models?.[modelId]
     ?? (modelId === (status?.defaultModelId ?? "pythia_dose") ? status : null);
   useEffect(() => {
@@ -377,6 +387,7 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
       };
       const nextResult = await runInference({
         modelId,
+        ...(grid.times ? { targetTimes: grid.times } : {}),
         ...(modelId === "pythia_covariates" ? { provideLloq, targetCovariates: targetPayload(effectiveTargets, patientColumns, Number(draws)) } : {}),
         study: {
           id: study.id, drug: study.drug, study: study.study, source: study.source,
@@ -385,7 +396,7 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
           concentrationUnit: study.concentrationUnit, timeUnit: study.timeUnit,
           subjects: study.subjects, assay: study.assay,
         },
-        doseEvents: modelId === "pythia" ? [generationOnlyEvent] : protocol.events,
+        doseEvents: modelId === "tabpfn" || modelId === "tabpfn_ts" ? initialProtocol : modelId === "pythia" ? [generationOnlyEvent] : protocol.events,
         nDraws: Number(draws),
         batchSize: 8,
         solver: { method: "heun", steps: 8 },
@@ -409,7 +420,7 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
   };
   return <section className="model-panel model-action-rail">
     <div className="model-action-row">
-      <div className="model-action-identity"><h2>Prior-fitted flows</h2></div>
+      <div className="model-action-identity"><h2>Generative models</h2></div>
       <div className="inference-actions">
         <button type="button" className="primary-button inference-progress" data-filled={progress >= 50 ? "true" : undefined} aria-label={running ? "Running model" : "Run model"} aria-busy={running} disabled={!selectedStatus?.ready || !eligible || !controlsValid || running} onClick={() => void submit()}>
           <span className="inference-progress-fill" role="progressbar" aria-label="Inference progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} style={{ width: `${progress}%` }} />
@@ -420,7 +431,9 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
         <select aria-label="Models" value={modelId} onChange={(event) => selectModel(event.target.value as ModelId)}>
           <option value="pythia">Pythia</option>
           <option value="pythia_dose">Pythia-Dose</option>
-          {status?.models?.pythia_covariates && <option value="pythia_covariates">Pythia-Covariates</option>}
+          {status?.models?.pythia_covariates && <option value="pythia_covariates">{status.models.pythia_covariates.label ?? "Pythia_Covariates"}</option>}
+          {!hosted && status?.models?.tabpfn && <option value="tabpfn">TabPFN</option>}
+          {!hosted && status?.models?.tabpfn_ts && <option value="tabpfn_ts">TabPFN-TS</option>}
         </select>
       </label>
       <div className="model-controls">
@@ -428,7 +441,7 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
         <label className={seedError ? "invalid" : ""}>Seed <input aria-label="Random seed" aria-invalid={Boolean(seedError)} type="number" min="0" max={2**31 - 1} step="1" value={seed} onChange={(event) => { setSeed(event.target.value); invalidate(); }} />{seedError && <small className="field-error">{seedError}</small>}</label>
       </div>
     </div>
-    {modelId !== "pythia" && !individualDosing && <><div className="event-list">
+    {modelId !== "pythia" && modelId !== "tabpfn" && modelId !== "tabpfn_ts" && !individualDosing && <><div className="event-list">
       {events.map((event, index) => {
         const eventErrors = protocol.errors[event.id] ?? {};
         const ratio = contextDoseRatio(event.amount, referenceDose);
@@ -444,6 +457,22 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
       {!events.length && <p className="empty-protocol">Add at least one dose event.</p>}
     </div>
     <div className="protocol-actions"><button type="button" className="secondary-button" onClick={addIntervention}>+ Add intervention</button><button type="button" className="secondary-button quiet" onClick={restoreObservedProtocol}>Reset protocol</button></div></>}
+    {supportsTargetGrid && <fieldset className="observation-protocol">
+      <legend>Observation protocol</legend>
+      <div className="model-controls">
+        <label>Target grid<select aria-label="Target grid" value={gridMode} onChange={e => { setGridMode(e.target.value as GridMode); invalidate(); }}>
+          <option value="study">Study observation times</option><option value="uniform">Evenly spaced</option><option value="custom">Custom times</option>
+        </select></label>
+        {gridMode === "uniform" && <>
+          <label>Start ({study.timeUnit})<input aria-label="Target start time" type="number" min="0" step="any" value={gridStart} onChange={e => { setGridStart(e.target.value); invalidate(); }} /></label>
+          <label>End ({study.timeUnit})<input aria-label="Target end time" type="number" min="0" step="any" value={gridEnd ?? String(horizon)} onChange={e => { setGridEnd(e.target.value); invalidate(); }} /></label>
+          <label>Points<input aria-label="Target time points" type="number" min="2" max="256" value={gridCount} onChange={e => { setGridCount(e.target.value); invalidate(); }} /></label>
+        </>}
+        {gridMode === "custom" && <label>Times ({study.timeUnit})<input aria-label="Custom target times" placeholder="0, 0.5, 1, 2" value={customTimes} onChange={e => { setCustomTimes(e.target.value); invalidate(); }} /></label>}
+      </div>
+      {grid.error && <p className="model-error">{grid.error}</p>}
+      {grid.times && grid.times[grid.times.length - 1] > horizon && <p className="model-warning">Beyond the study window: extrapolation.</p>}
+    </fieldset>}
     {modelId === "pythia_covariates" && <TargetPopulationControls study={study} columns={patientColumns} rules={populationRules}
       onChange={(key, rule) => { setPopulationRules(current => ({ ...current, [key]: rule })); setTargetDrafts([]); invalidate(); }} />}
     {modelId === "pythia_covariates" && <TargetCovariateTable columns={patientColumns} rows={effectiveTargets} count={targetCount}
@@ -455,8 +484,8 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
     {targetsInvalid && <p className="model-error">{population.error || "Enter valid target covariates; age, weight, height and function ratios must be positive."}</p>}
     {!eligible && <p className="model-warning">Interactive Pythia-PK inference requires at least two individual trajectories.</p>}
     {!selectedStatus?.ready && <p className="model-warning">{hosted ? "The hosted model is waking up. Controls enable automatically when it is ready." : <><span>Start the local inference service with </span><code>npm run inference</code><span>. The model controls remain disabled until its checkpoint is available.</span></>}</p>}
-    {modelId !== "pythia" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
-    {modelId !== "pythia" && eligible && study.dose === null && !individualDosing && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
+    {modelId !== "pythia" && modelId !== "tabpfn" && modelId !== "tabpfn_ts" && eligible && !canonicalRoute && <p className="model-warning">{study.route} is encoded as the model&apos;s generic non-oral dimensionless protocol. Interpret interventions as relative exposure changes.</p>}
+    {modelId !== "pythia" && modelId !== "tabpfn" && modelId !== "tabpfn_ts" && eligible && study.dose === null && !individualDosing && <p className="model-warning">No absolute exposure was reported. The observed protocol is assigned reference exposure 1; controls are relative to that reference.</p>}
     {error && <p className="model-error">{error}</p>}
   </section>;
 }
@@ -464,7 +493,7 @@ export function ModelPanel({ study, onResult, initialSeed = 9877795 }: { study: 
 function InactiveModelPanel({ stale = false }: { stale?: boolean }) {
   return <section className="model-panel model-action-rail inactive-model-panel">
     <div className="model-action-row">
-      <div className="model-action-identity"><h2>Prior-fitted flows</h2>{!stale && <span className="status">Awaiting cohort</span>}</div>
+      <div className="model-action-identity"><h2>Generative models</h2>{!stale && <span className="status">Awaiting cohort</span>}</div>
       <div className="inference-actions"><button type="button" className="primary-button inference-progress" disabled><span className="inference-progress-label">Run model</span></button></div>
       <label className="model-select">Model
         <select aria-label="Inactive model selection" value="pythia" disabled><option>Pythia</option></select>
@@ -502,8 +531,8 @@ function VpcLegend({ result, empiricalVpc }: {
     <span className="legend-item"><i className={empiricalVpc ? "cyan-solid-line" : "blue-band"} />{empiricalVpc ? "5/95%" : "±SD"}</span>
   </span>;
   return <span className="legend">
-    <span className="legend-item"><i className="generated-outer-band" />Pythia 5/95%</span>
-    <span className="legend-item"><i className="generated-median-band" />Pythia 50%</span>
+    <span className="legend-item"><i className="generated-outer-band" />{getModelLabel(result.request?.modelId)} 5/95%</span>
+    <span className="legend-item"><i className="generated-median-band" />{getModelLabel(result.request?.modelId)} 50%</span>
     <span className="legend-item"><i className="magenta-solid-line" />Study 50%</span>
     <span className="legend-item"><i className="cyan-solid-line" />Study 5/95%</span>
   </span>;
@@ -542,8 +571,8 @@ export function VpcPanel({ study, result, logY, onLogY }: {
     const timer = setTimeout(() => {
       setError("");
       void syntheticRequest<InferenceResponse["vpc"]>({
-        action: "vpc", study, numBins,
-        queryTime: result.queryTime, generatedConcentration: result.generatedConcentration,
+        action: "vpc", study: modelEvaluationStudy(study, result), numBins,
+        queryTime: result.observationPredictions?.queryTime ?? result.queryTime, generatedConcentration: result.observationPredictions?.generatedConcentration ?? result.generatedConcentration,
       }, abort.signal).then(vpc => {
         if (study.assay && !vpc.censoring) throw new Error("The VPC service needs the assay-censoring update.");
         if (!abort.signal.aborted) setRebinned({ source: result, bins: numBins, vpc });
@@ -604,6 +633,7 @@ export function Dashboard() {
   const [darkMode, setDarkMode] = useState(false);
   const [modelResult, setModelResult] = useState<InferenceResponse | null>(null);
   const [assayLimit, setAssayLimit] = useState<number | null>(null);
+  const [empiricalLimits, setEmpiricalLimits] = useState<Record<string, number>>({});
   const [sensitivity, setSensitivity] = useState(67);
   const [showLatent, setShowLatent] = useState(true);
   useEffect(() => {
@@ -637,7 +667,7 @@ export function Dashboard() {
     ? builtInSynthetic
       ? (syntheticStudy && assayLimit !== null ? applySyntheticCensoring(syntheticStudy, assayLimit) : syntheticStudy)
       : externalSyntheticStudy
-    : selected;
+    : applyEmpiricalCensoring(selected, empiricalLimits[selected.id] ?? selected.assay?.lloq ?? 0);
   const setAssaySensitivity = (ratio: number) => {
     if (!syntheticStudy || !Number.isFinite(ratio) || ratio < 1 || ratio > 10000) return;
     const maximum = Math.max(...syntheticStudy.subjects.flatMap((s) => s.points.map(([, c]) => c)));
@@ -646,7 +676,7 @@ export function Dashboard() {
     if (assayLimit !== null) setAssayLimit(maximum / ratio);
     setModelResult(null);
   };
-  const modelLabel = modelResult?.request.modelId === "pythia_covariates" ? "Pythia-Covariates" : modelResult?.request.modelId === "pythia" ? "Pythia" : "Pythia-Dose";
+  const modelLabel = getModelLabel(modelResult?.request.modelId);
   return <div className="dashboard-shell" data-theme={darkMode ? "dark" : "light"}>
     <header className="topbar">
       <div className="workspace-title">{syntheticMode ? "Synthetic Cohorts" : "Empirical Cohorts"}</div>
@@ -696,6 +726,20 @@ export function Dashboard() {
             </dl>
           </section>
         </section>}
+        {!syntheticMode && selected.subjects.length > 0 && <div className="synthetic-protocol-heading"><div className="synthetic-schedule-controls">
+          <label htmlFor="empirical-lloq">LLOQ ({selected.concentrationUnit}) <NumericEdit
+            key={selected.id}
+            id="empirical-lloq" label="Empirical LLOQ"
+            min={selected.assay?.lloq ?? 0}
+            max={Math.max(selected.assay?.lloq ?? 0, ...selected.subjects.flatMap(s => s.points.map(([, c]) => c)))}
+            value={empiricalLimits[selected.id] ?? selected.assay?.lloq ?? 0}
+            onCommit={value => { setEmpiricalLimits(previous => ({ ...previous, [selected.id]: value })); setModelResult(null); }}
+          /></label>
+          <button type="button" className="secondary-button" onClick={() => {
+            setEmpiricalLimits(previous => { const next = { ...previous }; delete next[selected.id]; return next; });
+            setModelResult(null);
+          }}>Reset LLOQ</button>
+        </div></div>}
         {activeStudy && (!syntheticMode || !syntheticStale)
           ? <ModelPanel key={`model:${activeStudy.id}`} study={activeStudy} onResult={setModelResult} initialSeed={syntheticMode ? 9877795 : 420} />
           : <InactiveModelPanel stale={syntheticStale} />}
@@ -704,7 +748,7 @@ export function Dashboard() {
             <article className="card chart-card">
               <div className="card-heading"><h2>Individuals <span className="individual-count">N={activeStudy.subjects.length}</span></h2><div className="chart-actions"><span className="legend">{modelResult && <><span className="legend-item"><i className="red-line" />{modelLabel}</span></>}<span className="legend-item"><i className="blue-line" />Study</span></span><PlotScaleToggle logY={trajectoryLogY} onChange={setTrajectoryLogY} plot="concentration profiles" /></div></div>
               {modelResult ? <ModelTrajectoryChart result={modelResult} study={activeStudy} logY={trajectoryLogY} showEmpirical showLatent={syntheticMode && showLatent && builtInSynthetic} /> : <TrajectoryChart study={activeStudy} logY={trajectoryLogY} showLatent={showLatent && builtInSynthetic} />}
-              {modelResult && <p className="assay-caption">Generated individuals use the context patients’ observation schedules, repeated across the generated cohort.</p>}
+              {modelResult && !modelResult.request.targetTimes && <p className="assay-caption">Generated individuals use the context patients’ observation schedules, repeated across the generated cohort.</p>}
               <IndividualsCaption study={activeStudy} result={modelResult} />
             </article>
             <VpcPanel key={activeStudy.id} study={activeStudy} result={modelResult} logY={vpcLogY} onLogY={setVpcLogY} />

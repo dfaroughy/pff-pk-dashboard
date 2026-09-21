@@ -1,0 +1,10 @@
+{
+  "modelId": "pythia_covariates",
+  "label": "Pythia_Covariates",
+  "globalStep": 76000,
+  "checkpointSha256": "d56dcd6f34832a20c7877a2bfa19560596fd79bfdee9d7f435399ba891b2dce0",
+  "localCheckpointRelativeToPffPk": "artifacts/checkpoints/pythia_covariates_v7_step76000/step-000076000.ckpt",
+  "source": "Thunder production branch v7-thunder-branch-25758-20260916",
+  "cometKey": "79b128572c484601b6ef40a2f8f6f9e7",
+  "releaseScope": "local-only"
+}

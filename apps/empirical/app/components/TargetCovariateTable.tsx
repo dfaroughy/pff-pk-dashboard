@@ -10,8 +10,8 @@ const columns: TargetColumn[] = [
   { key: "renal_function_ratio", label: "Renal ratio", positive: true },
   { key: "hepatic_function_ratio", label: "Hepatic ratio", positive: true },
   { key: "metabolic_phenotype", label: "Metabolic phenotype", options: ["poor", "normal", "rapid"] },
-  { key: "cov_cont_0", label: "cov_cont_0" },
-  { key: "cov_cat_0", label: "cov_cat_0", options: [] },
+  { key: "cov_cont_0", label: "Generic continuous" },
+  { key: "cov_cat_0", label: "Generic categorical", options: [] },
 ];
 
 export function targetColumns(study: Study): TargetColumn[] {
